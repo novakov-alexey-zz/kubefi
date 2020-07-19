@@ -1,0 +1,19 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: {{ ingressClass }}
+  labels:
+    app: nifi
+    app.kubernetes.io/managed-by: Kubefi
+    heritage: Kubefi
+  name: nifi-ingress
+spec:
+  rules:
+  - host: {{ host }}
+    http:
+      paths:
+      - backend:
+          serviceName: nifi
+          servicePort: 80
+        path: /
