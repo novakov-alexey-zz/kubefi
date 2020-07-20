@@ -7,4 +7,5 @@ metadata:
     heritage: Kubefi    
   name: {{ name }}-config
 data:
-  {{ data }}
+  authorizers-empty.xml: |+
+    {{ authorizers-empty.xml }}

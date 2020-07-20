@@ -5,11 +5,10 @@ extern crate kubefi_deployments;
 #[macro_use]
 extern crate log;
 
-use std::env;
 use std::fs;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use dotenv::dotenv;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
@@ -24,7 +23,7 @@ use kubefi_deployments::controller::{NiFiController, ReplaceStatus};
 use kubefi_deployments::crd::{create_new_version, delete_old_version, NiFiDeployment};
 use kubefi_deployments::get_api;
 use kubefi_deployments::Namespace;
-use kubefi_deployments::operator_config::Config;
+use kubefi_deployments::operator_config::read_config;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -47,7 +46,7 @@ async fn main() -> Result<()> {
     let api: Api<NiFiDeployment> = get_api(&namespace, client.clone());
 
     let informer = Informer::new(api.clone());
-    let defaults = read_config();
+    let defaults = read_config()?;
     let controller = NiFiController::new(namespace, client, defaults,
                                          Path::new("./templates"))?;
 
@@ -62,7 +61,8 @@ async fn main() -> Result<()> {
             None => Ok(())
         }?;
     }
-    Ok(())
+
+    Err(Error::msg("Event stream for NiFiDeployment was closed, exiting...".to_string()))
 }
 
 async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<()> {
@@ -82,13 +82,6 @@ async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<(
     }
 }
 
-fn read_config() -> Config {
-    let image = env::var("IMAGE_NAME").ok();
-    let zk_image = env::var("ZK_IMAGE_NAME").ok();
-    let storage_class = env::var("STORAGE_CLASS").ok();
-    Config { image, zk_image, storage_class }
-}
-
 fn read_namespace() -> Namespace {
     let ns = std::env::var("NAMESPACE").unwrap_or("default".into());
     match ns.as_str() {
@@ -101,27 +94,29 @@ async fn handle_event(controller: &NiFiController, event: WatchEvent<NiFiDeploym
     match event {
         WatchEvent::Added(o) => {
             let spec = o.spec.clone();
-            println!("added deployment: {} (spec={:?})", Meta::name(&o), spec);
+            info!("adding deployment: {} (spec={:?})", Meta::name(&o), spec);
             controller.on_add(o).await
         }
         WatchEvent::Modified(o) => {
             let status = o.status.clone().unwrap();
-            println!(
-                "modified Deployment: {} (status={:?})",
+            info!(
+                "modifying Deployment: {} (status={:?})",
                 Meta::name(&o),
                 status
             );
             controller.on_modify(o).await
         }
         WatchEvent::Deleted(o) => {
-            println!("deleted Deployment: {}", Meta::name(&o));
+            info!("deleting Deployment: {}", Meta::name(&o));
             controller.on_delete(o).await.map(|_| None)
         }
         WatchEvent::Error(e) => {
-            println!("Error event: {:?}", e);
-            //let status1 = NiFiDeploymentStatus { error: e.message, last_action: "error".to_string() };
+            error!("Error event: {:?}", e);
             Ok(None)
         }
-        _ => Ok(None)
+        WatchEvent::Bookmark(o) => {
+            warn!("Got bookmark {:?}. It is not supported yet by this operator!", o);
+            Ok(None)
+        }
     }
 }

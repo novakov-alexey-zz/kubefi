@@ -34,7 +34,20 @@ impl Template {
 
     pub fn service(&self, name: &String) -> Result<String> {
         let data: BTreeMap<&str, &String> = [("name", name)].iter().cloned().collect();
-        self.handlebars.render(SERVICE, &data)
+        self.render(&data, SERVICE)
+    }
+
+    pub fn ingress(&self, name: &String, ingress_class: &String, host: &String) -> Result<String> {
+        let data: BTreeMap<&str, &String> = [
+            ("name", name),
+            ("ingressClass", ingress_class),
+            ("host", host)]
+            .iter().cloned().collect();
+        self.render(&data, INGRESS)
+    }
+
+    fn render(&self, data: &BTreeMap<&str, &String>, template: &str) -> Result<String> {
+        self.handlebars.render(template, &data)
             .map_err(|e| Error::new(e))
     }
 
@@ -47,7 +60,6 @@ impl Template {
             ("replicas", replicas_str),
             ("storageClass", storage_class)]
             .iter().cloned().collect();
-        self.handlebars.render(template, &data)
-            .map_err(|e| Error::new(e))
+        self.render(&data, template)
     }
 }

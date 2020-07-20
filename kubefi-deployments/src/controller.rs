@@ -9,10 +9,10 @@ use std::path::Path;
 use anyhow::Error;
 use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::core::v1::Service;
+use k8s_openapi::api::extensions::v1beta1::Ingress;
 use k8s_openapi::Resource;
 use kube::{Api, Client};
 use kube::api::{Meta, PostParams};
-use kube::client::Status;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -20,7 +20,7 @@ use crate::anyhow::Result;
 use crate::controller::ControllerError::{MissingProperty, MissingTemplateParameter};
 use crate::crd::{NiFiDeployment, NiFiDeploymentSpec, NiFiDeploymentStatus};
 use crate::Namespace;
-use crate::operator_config::Config;
+use crate::operator_config::{Config, IngressConfig};
 use crate::template::Template;
 
 #[derive(Debug)]
@@ -75,10 +75,8 @@ impl NiFiController {
 
     async fn handle_action(&self, d: NiFiDeployment, last_action: String) -> Result<Option<ReplaceStatus>, Error> {
         let name = d.clone().metadata.name.ok_or(MissingProperty("name".to_string(), d.kind.clone()))?;
-        let error = match self.handle_event(d, &name).await {
-            Ok(name) => "".to_string(),
-            Err(e) => e.to_string()
-        };
+        let error = self.handle_event(d, &name).await
+            .err().map(|e| e.to_string()).unwrap_or(String::new());
         let status = NiFiDeploymentStatus { error, last_action };
         Ok(Some(ReplaceStatus { name, status }))
     }
@@ -100,10 +98,27 @@ impl NiFiController {
         let (r1, r2) = futures::future::join(nifi, zk).await;
         r1.or(r2)?;
 
-        //Service
+        // Service
         self.create_service(&name).await?;
+        // Ingress
+        if let Some(ingress) = &self.defaults.ingress {
+            self.create_ingress(&name, &ingress).await?;
+        }
+
 
         Ok(())
+    }
+
+    async fn create_ingress(&self, name: &String, ingress: &IngressConfig) -> Result<Ingress> {
+        let api: Api<Ingress> = super::get_api(&self.namespace, self.client.clone());
+        match api.get(&name).await {
+            Err(_) => {
+                let yaml = self.template.ingress(&name, &ingress.ingress_class, &ingress.host)?;
+                let nifi_ingress = NiFiController::from_yaml(&yaml)?;
+                self.create_resource(&api, nifi_ingress).await
+            }
+            Ok(s) => Ok(s)
+        }
     }
 
     async fn create_service(&self, name: &String) -> Result<Service> {
@@ -114,7 +129,7 @@ impl NiFiController {
                 let nifi_service = NiFiController::from_yaml(&yaml)?;
                 self.create_resource(&api, nifi_service).await
             }
-            ok => ok.map_err(|e| Error::new(e))
+            Ok(s) => Ok(s)
         }
     }
 
