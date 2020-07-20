@@ -13,15 +13,15 @@ use anyhow::Result;
 use dotenv::dotenv;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
-use kube::api::Api;
+use kube::api::{Api, PostParams};
 use kube::api::Meta;
 use kube::api::WatchEvent;
 use kube::Client;
 use kube::runtime::Informer;
 use tokio::time::{delay_for, Duration};
 
-use kubefi_deployments::controller::NiFiController;
-use kubefi_deployments::crd::{create_new_version, delete_old_version, NiFiDeployment, NiFiDeploymentStatus};
+use kubefi_deployments::controller::{NiFiController, ReplaceStatus};
+use kubefi_deployments::crd::{create_new_version, delete_old_version, NiFiDeployment};
 use kubefi_deployments::get_api;
 use kubefi_deployments::Namespace;
 use kubefi_deployments::operator_config::Config;
@@ -44,9 +44,9 @@ async fn main() -> Result<()> {
     delay_for(Duration::from_secs(1)).await;
 
     let namespace = read_namespace();
-    let api_deployments: Api<NiFiDeployment> = get_api(&namespace, client.clone());
+    let api: Api<NiFiDeployment> = get_api(&namespace, client.clone());
 
-    let informer = Informer::new(api_deployments);
+    let informer = Informer::new(api.clone());
     let defaults = read_config();
     let controller = NiFiController::new(namespace, client, defaults,
                                          Path::new("./templates"))?;
@@ -56,15 +56,37 @@ async fn main() -> Result<()> {
 
     let mut stream = informer.poll().await?.boxed();
     while let Some(event) = stream.try_next().await? {
-        handle(&controller, event).await; //TODO: handle status
+        let status = handle_event(&controller, event.clone()).await?;
+        match status {
+            Some(s) => replace_status(&api, s).await,
+            None => Ok(())
+        }?;
     }
     Ok(())
 }
 
+async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<()> {
+    let mut resource = api.get_status(&s.name).await?;
+    resource.status = Some(s.status);
+    let pp = PostParams::default();
+    let data = serde_json::to_vec(&resource)?;
+    match api.replace_status(s.name.as_str(), &pp, data).await.map(|_| ()) {
+        Ok(_) => {
+            info!("Status updated");
+            Ok(())
+        }
+        Err(e) => {
+            error!("Update status failed {:?}", e);
+            Ok(())
+        }
+    }
+}
+
 fn read_config() -> Config {
-    let image_name = env::var("IMAGE_NAME").ok();
+    let image = env::var("IMAGE_NAME").ok();
+    let zk_image = env::var("ZK_IMAGE_NAME").ok();
     let storage_class = env::var("STORAGE_CLASS").ok();
-    Config { image_name, storage_class }
+    Config { image, zk_image, storage_class }
 }
 
 fn read_namespace() -> Namespace {
@@ -75,7 +97,7 @@ fn read_namespace() -> Namespace {
     }
 }
 
-async fn handle(controller: &NiFiController, event: WatchEvent<NiFiDeployment>) -> Result<Option<NiFiDeploymentStatus>> {
+async fn handle_event(controller: &NiFiController, event: WatchEvent<NiFiDeployment>) -> Result<Option<ReplaceStatus>> {
     match event {
         WatchEvent::Added(o) => {
             let spec = o.spec.clone();
@@ -97,7 +119,8 @@ async fn handle(controller: &NiFiController, event: WatchEvent<NiFiDeployment>) 
         }
         WatchEvent::Error(e) => {
             println!("Error event: {:?}", e);
-            Ok(Some(NiFiDeploymentStatus { last_action: e.message }))
+            //let status1 = NiFiDeploymentStatus { error: e.message, last_action: "error".to_string() };
+            Ok(None)
         }
         _ => Ok(None)
     }

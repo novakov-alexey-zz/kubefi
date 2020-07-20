@@ -20,11 +20,13 @@ pub struct NiFiDeploymentSpec {
     pub nifi_replicas: u8,
     pub zk_replicas: u8,
     pub image_name: Option<String>,
-    pub storage_class: Option<String>
+    pub zk_image_name: Option<String>,
+    pub storage_class: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 pub struct NiFiDeploymentStatus {
+    pub error: String,
     pub last_action: String
 }
 

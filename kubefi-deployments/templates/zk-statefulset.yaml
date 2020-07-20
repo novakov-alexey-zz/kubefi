@@ -57,7 +57,7 @@ spec:
           value: "false"
         - name: ZOO_TICK_TIME
           value: "4000"
-        image: zookeeper:3.5.5
+        image: {{ imageName }}
         imagePullPolicy: IfNotPresent
         livenessProbe:
           exec:
@@ -123,5 +123,5 @@ spec:
       resources:
         requests:
           storage: 5Gi
-      storageClassName: nfs-client
+      storageClassName: {{ storageClass }}
       volumeMode: Filesystem    
