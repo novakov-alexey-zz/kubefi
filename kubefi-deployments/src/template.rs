@@ -3,6 +3,7 @@ use std::path::Path;
 
 use anyhow::{Error, Result};
 use handlebars::Handlebars;
+use crate::handelbars_ext::get_files_helper;
 
 pub struct Template {
     handlebars: Handlebars<'static>,
@@ -19,6 +20,7 @@ impl Template {
     pub fn new(path: &Path) -> Result<Self> {
         let mut handlebars = Handlebars::new();
         handlebars.register_templates_directory(TEMPLATE_FILE_EXTENSION, path)?;
+        handlebars.register_helper("get_files", Box::new(get_files_helper));
         Ok(Template { handlebars })
     }
 
@@ -44,6 +46,11 @@ impl Template {
             ("host", host)]
             .iter().cloned().collect();
         self.render(&data, INGRESS)
+    }
+
+    pub fn configmap(&self, name: &String) -> Result<String> {
+        let data: BTreeMap<&str, &String> = [("name", name)].iter().cloned().collect();
+        self.render(&data, CONFIGMAP)
     }
 
     fn render(&self, data: &BTreeMap<&str, &String>, template: &str) -> Result<String> {

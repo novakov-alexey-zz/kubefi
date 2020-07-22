@@ -21,8 +21,7 @@ use tokio::time::{delay_for, Duration};
 
 use kubefi_deployments::controller::{NiFiController, ReplaceStatus};
 use kubefi_deployments::crd::{create_new_version, delete_old_version, NiFiDeployment};
-use kubefi_deployments::get_api;
-use kubefi_deployments::Namespace;
+use kubefi_deployments::{get_api, read_namespace};
 use kubefi_deployments::operator_config::read_config;
 
 #[tokio::main]
@@ -79,14 +78,6 @@ async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<(
             error!("Update status failed {:?}", e);
             Ok(())
         }
-    }
-}
-
-fn read_namespace() -> Namespace {
-    let ns = std::env::var("NAMESPACE").unwrap_or("default".into());
-    match ns.as_str() {
-        "all" => Namespace::All,
-        _ => Namespace::SingleNamespace(ns)
     }
 }
 
