@@ -1,56 +1,37 @@
-use std::env;
-
 use anyhow::{Error, Result};
+use hocon::{Hocon, HoconLoader};
+use serde_json::{Number, Value};
 
-pub struct IngressConfig {
-    pub host: String,
-    pub ingress_class: String,
+pub fn read_config() -> Result<Value> {
+    debug!("Loading config...");
+    let hocon = HoconLoader::new()
+        .load_file("./conf/nifi.conf")?
+        .hocon()?;
+    hocon_to_json(hocon).ok_or(Error::msg("Failed to convert config file to JSON"))
 }
 
-pub struct AuthLdapConfig {
-    pub host: String,
-    pub search_base: String,
-    pub search_filter: String,
-}
-
-pub struct SiteToSite {
-    pub secure: Boolean,
-    pub port: u16,
-}
-
-pub struct Properties {
-    pub provenance_storage: String,
-    pub site_to_site: SiteToSite,
-    pub web_proxy_host: String,
-    pub http_port: u16,
-    pub https_port: u16,
-    pub need_client_auth: Boolean,
-    pub authorizer: String,
-    pub cluster_secure: Boolean,
-    pub is_node: Boolean,
-    pub cluster_port: u16,
-}
-
-pub struct Config {
-    pub image: Option<String>,
-    pub zk_image: Option<String>,
-    pub storage_class: Option<String>,
-    pub ingress: Option<IngressConfig>,
-    pub auth_ldap_config: Option<AuthLdapConfig>,
-    pub props: Properties,
-}
-
-pub fn read_config() -> Result<Config> {
-    let image = env::var("IMAGE_NAME").ok();
-    let zk_image = env::var("ZK_IMAGE_NAME").ok();
-    let storage_class = env::var("STORAGE_CLASS").ok();
-    let ingress_class = env::var("INGRESS_CLASS").ok();
-    let ingress_host = env::var("INGRESS_HOST").ok();
-    let ingress = match (ingress_class, ingress_host) {
-        (Some(c), Some(h)) => Ok(Some(IngressConfig { host: h, ingress_class: c })),
-        (Some(_), None) | (None, Some(_)) => Err(Error::msg("INGRESS_CLASS or INGRESS_HOST is not specified")),
-        (None, None) => Ok(None)
-    }?;
-    Ok(Config { image, zk_image, storage_class, ingress })
+fn hocon_to_json(hocon: Hocon) -> Option<Value> {
+    match hocon {
+        Hocon::Boolean(b) => Some(Value::Bool(b)),
+        Hocon::Integer(i) => Some(Value::Number(Number::from(i))),
+        Hocon::Real(f) => Some(Value::Number(
+            Number::from_f64(f).unwrap_or(Number::from(0)),
+        )),
+        Hocon::String(s) => Some(Value::String(s)),
+        Hocon::Array(vec) => Some(Value::Array(
+            vec.into_iter()
+                .map(hocon_to_json)
+                .filter_map(|i| i)
+                .collect(),
+        )),
+        Hocon::Hash(map) => Some(Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, hocon_to_json(v)))
+                .filter_map(|(k, v)| v.map(|v| (k, v)))
+                .collect(),
+        )),
+        Hocon::Null => Some(Value::Null),
+        Hocon::BadValue(_) => None,
+    }
 }
 

@@ -19,9 +19,9 @@ use kube::Client;
 use kube::runtime::Informer;
 use tokio::time::{delay_for, Duration};
 
+use kubefi_deployments::{get_api, read_namespace};
 use kubefi_deployments::controller::{NiFiController, ReplaceStatus};
 use kubefi_deployments::crd::{create_new_version, delete_old_version, NiFiDeployment};
-use kubefi_deployments::{get_api, read_namespace};
 use kubefi_deployments::operator_config::read_config;
 
 #[tokio::main]
@@ -45,8 +45,9 @@ async fn main() -> Result<()> {
     let api: Api<NiFiDeployment> = get_api(&namespace, client.clone());
 
     let informer = Informer::new(api.clone());
-    let defaults = read_config()?;
-    let controller = NiFiController::new(namespace, client, defaults,
+    let config = read_config()?;
+    debug!("Loaded config {}", config);
+    let controller = NiFiController::new(namespace, client, config,
                                          Path::new("./templates"))?;
 
     info!("Starting Kubefi event loop for {:?}",

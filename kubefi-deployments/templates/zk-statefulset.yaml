@@ -57,7 +57,7 @@ spec:
           value: "false"
         - name: ZOO_TICK_TIME
           value: "4000"
-        image: {{ imageName }}
+        image: {{ zk_image }}
         imagePullPolicy: IfNotPresent
         livenessProbe:
           exec:
@@ -123,5 +123,5 @@ spec:
       resources:
         requests:
           storage: 5Gi
-      storageClassName: {{ storageClass }}
+      storageClassName: {{ storage_class }}
       volumeMode: Filesystem    

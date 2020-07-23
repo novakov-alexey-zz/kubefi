@@ -8,19 +8,19 @@ use std::path::Path;
 
 use anyhow::Error;
 use k8s_openapi::api::apps::v1::StatefulSet;
-use k8s_openapi::api::core::v1::Service;
+use k8s_openapi::api::core::v1::{ConfigMap, Service};
 use k8s_openapi::api::extensions::v1beta1::Ingress;
 use k8s_openapi::Resource;
 use kube::{Api, Client};
 use kube::api::{Meta, PostParams};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::anyhow::Result;
-use crate::controller::ControllerError::{MissingProperty, MissingTemplateParameter};
+use crate::controller::ControllerError::MissingProperty;
 use crate::crd::{NiFiDeployment, NiFiDeploymentSpec, NiFiDeploymentStatus};
 use crate::Namespace;
-use crate::operator_config::{Config, IngressConfig};
 use crate::template::Template;
 
 #[derive(Debug)]
@@ -59,14 +59,13 @@ impl error::Error for ControllerError {
 pub struct NiFiController {
     pub namespace: Namespace,
     pub client: Client,
-    pub defaults: Config,
     template: Template,
 }
 
 impl NiFiController {
-    pub fn new(ns: Namespace, client: Client, defaults: Config, template_path: &Path) -> Result<Self> {
-        let template = Template::new(template_path)?;
-        Ok(NiFiController { namespace: ns, client, defaults, template })
+    pub fn new(ns: Namespace, client: Client, config: Value, template_path: &Path) -> Result<Self> {
+        let template = Template::new(template_path, config)?;
+        Ok(NiFiController { namespace: ns, client, template })
     }
 
     pub async fn on_add(&self, d: NiFiDeployment) -> Result<Option<ReplaceStatus>> {
@@ -101,19 +100,29 @@ impl NiFiController {
         // Service
         self.create_service(&name).await?;
         // Ingress
-        if let Some(ingress) = &self.defaults.ingress {
-            self.create_ingress(&name, &ingress).await?;
-        }
-
-
+        self.create_ingress(&name).await?;
+        // Configmap
+        self.create_configmap(&name).await?;
         Ok(())
     }
 
-    async fn create_ingress(&self, name: &String, ingress: &IngressConfig) -> Result<Ingress> {
+    async fn create_configmap(&self, name: &String) -> Result<ConfigMap> {
+        let api: Api<ConfigMap> = super::get_api(&self.namespace, self.client.clone());
+        match api.get(&name).await {
+            Err(_) => {
+                let yaml = self.template.configmap(&name)?;
+                let configmap = NiFiController::from_yaml(&yaml)?;
+                self.create_resource(&api, configmap).await
+            }
+            Ok(cm) => Ok(cm)
+        }
+    }
+
+    async fn create_ingress(&self, name: &String) -> Result<Ingress> {
         let api: Api<Ingress> = super::get_api(&self.namespace, self.client.clone());
         match api.get(&name).await {
             Err(_) => {
-                let yaml = self.template.ingress(&name, &ingress.ingress_class, &ingress.host)?;
+                let yaml = self.template.ingress(&name)?;
                 let nifi_ingress = NiFiController::from_yaml(&yaml)?;
                 self.create_resource(&api, nifi_ingress).await
             }
@@ -162,27 +171,25 @@ impl NiFiController {
     }
 
     fn nifi_set_resource(&self, spec: &NiFiDeploymentSpec, deployment_name: &String) -> Result<StatefulSet> {
-        let image_name = spec.image_name.clone().or(self.defaults.image.clone())
-            .ok_or(MissingTemplateParameter("image_name".to_string()))?;
-        let storage_class = self.read_storage_class(spec)?;
+        let image_name = &spec.image_name;
+        let storage_class = &spec.storage_class;
         let yaml = self.template
             .nifi_statefulset(deployment_name, &spec.nifi_replicas, &image_name, &storage_class)?;
         NiFiController::from_yaml(&yaml)
     }
 
     fn zk_set_resource(&self, spec: &NiFiDeploymentSpec, deployment_name: &String) -> Result<StatefulSet> {
-        let image_name = spec.zk_image_name.clone().or(self.defaults.zk_image.clone())
-            .ok_or(MissingTemplateParameter("zk_image_name".to_string()))?;
-        let storage_class = self.read_storage_class(spec)?;
+        let image_name = &spec.zk_image_name;
+        let storage_class = &spec.storage_class;
         let yaml = self.template
             .zk_statefulset(deployment_name, &spec.zk_replicas, &image_name, &storage_class)?;
         NiFiController::from_yaml(&yaml)
     }
 
-    fn read_storage_class(&self, spec: &NiFiDeploymentSpec) -> Result<String, ControllerError> {
-        spec.storage_class.clone().or(self.defaults.storage_class.clone())
-            .ok_or(MissingTemplateParameter("storage_class".to_string()))
-    }
+    // fn read_storage_class(&self, spec: &NiFiDeploymentSpec) -> Result<String, ControllerError> {
+    //     spec.storage_class.clone().or(self.defaults.storage_class.clone())
+    //         .ok_or(MissingTemplateParameter("storage_class".to_string()))
+    // }
 
     fn from_yaml<T: Resource + DeserializeOwned>(yaml: &String) -> Result<T, Error> {
         serde_yaml::from_str(&yaml).map_err(|e| Error::new(e))

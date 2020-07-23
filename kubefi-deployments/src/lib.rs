@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate serde_json;
 extern crate futures;
 extern crate k8s_openapi;
 extern crate kube;

@@ -69,7 +69,7 @@ spec:
         env:
         - name: NIFI_ZOOKEEPER_CONNECT_STRING
           value: nifi-zookeeper:2181
-        image: {{ imageName }}
+        image: {{ image }}
         imagePullPolicy: IfNotPresent
         lifecycle:
           preStop:
@@ -334,7 +334,7 @@ spec:
       resources:
         requests:
           storage: 1Gi
-      storageClassName: {{ storageClass }}
+      storageClassName: {{ storage_class }}
       volumeMode: Filesystem    
   - metadata:
       creationTimestamp: null
@@ -345,7 +345,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: {{ storageClass }}
+      storageClassName: {{ storage_class }}
       volumeMode: Filesystem    
   - metadata:      
       name: content-repository
@@ -355,7 +355,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: {{ storageClass }}
+      storageClassName: {{ storage_class }}
       volumeMode: Filesystem    
   - metadata:      
       name: provenance-repository
@@ -365,7 +365,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: {{ storageClass }}
+      storageClassName: {{ storage_class }}
       volumeMode: Filesystem    
   - metadata:      
       name: logs
@@ -375,5 +375,5 @@ spec:
       resources:
         requests:
           storage: 5Gi
-      storageClassName: {{ storageClass }}
+      storageClassName: {{ storage_class }}
       volumeMode: Filesystem 

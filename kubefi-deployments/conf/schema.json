@@ -5,14 +5,10 @@
       "title": "NiFiDeployment",
       "type": "object",
       "required": [
-        "image_name",
         "nifi_replicas",
         "zk_replicas"
       ],
       "properties": {
-        "image_name": {
-          "type": "string"
-        },
         "nifi_replicas": {
           "type": "integer",
           "format": "uint8",
@@ -22,12 +18,24 @@
           "type": "integer",
           "format": "uint8",
           "minimum": 0.0
+        },
+        "image_name": {
+          "type": "string"
+        },
+        "zk_image_name": {
+          "type": "string"
+        },
+        "storage_class": {
+          "type": "string"
         }
       }
     },
     "status": {
       "type": "object",
       "properties": {
+        "error": {
+          "type": "string"
+        },
         "last_action": {
           "type": "string"
         }
