@@ -7,11 +7,37 @@ pub struct IngressConfig {
     pub ingress_class: String,
 }
 
+pub struct AuthLdapConfig {
+    pub host: String,
+    pub search_base: String,
+    pub search_filter: String,
+}
+
+pub struct SiteToSite {
+    pub secure: Boolean,
+    pub port: u16,
+}
+
+pub struct Properties {
+    pub provenance_storage: String,
+    pub site_to_site: SiteToSite,
+    pub web_proxy_host: String,
+    pub http_port: u16,
+    pub https_port: u16,
+    pub need_client_auth: Boolean,
+    pub authorizer: String,
+    pub cluster_secure: Boolean,
+    pub is_node: Boolean,
+    pub cluster_port: u16,
+}
+
 pub struct Config {
     pub image: Option<String>,
     pub zk_image: Option<String>,
     pub storage_class: Option<String>,
     pub ingress: Option<IngressConfig>,
+    pub auth_ldap_config: Option<AuthLdapConfig>,
+    pub props: Properties,
 }
 
 pub fn read_config() -> Result<Config> {

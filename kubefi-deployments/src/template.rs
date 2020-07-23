@@ -48,8 +48,12 @@ impl Template {
         self.render(&data, INGRESS)
     }
 
+    // pass
     pub fn configmap(&self, name: &String) -> Result<String> {
-        let data: BTreeMap<&str, &String> = [("name", name)].iter().cloned().collect();
+        let data: BTreeMap<&str, &String> = [
+            ("name", name),
+            ("auth.ldap.enabled", false)
+        ].iter().cloned().collect();
         self.render(&data, CONFIGMAP)
     }
 

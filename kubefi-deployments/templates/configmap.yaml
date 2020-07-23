@@ -7,4 +7,4 @@ metadata:
     heritage: Kubefi    
   name: {{ name }}-config
 data:
-  {{ get_files "configs" }}
+  {{ get_files "configs" 4}}
