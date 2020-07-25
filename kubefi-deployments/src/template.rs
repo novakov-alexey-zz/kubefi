@@ -27,49 +27,62 @@ impl Template {
         Ok(Template { handlebars, config })
     }
 
-    pub fn nifi_statefulset(&self, name: &String, replicas: &u8, image_name: &Option<String>,
-                            storage_class: &Option<String>) -> Result<Option<String>> {
+    pub fn nifi_statefulset(
+        &self,
+        name: &str,
+        replicas: &u8,
+        image_name: &Option<String>,
+        storage_class: &Option<String>,
+    ) -> Result<Option<String>> {
         self.statefulset(name, replicas, image_name, storage_class, NIFI_STATEFULSET)
     }
 
-    pub fn zk_statefulset(&self, name: &String, replicas: &u8, image_name: &Option<String>,
-                          storage_class: &Option<String>) -> Result<Option<String>> {
+    pub fn zk_statefulset(
+        &self,
+        name: &str,
+        replicas: &u8,
+        image_name: &Option<String>,
+        storage_class: &Option<String>,
+    ) -> Result<Option<String>> {
         self.statefulset(name, replicas, image_name, storage_class, ZK_STATEFULSET)
     }
 
-    pub fn service(&self, name: &String) -> Result<Option<String>> {
-        let mut data = json!({"name": name});
+    pub fn service(&self, name: &str) -> Result<Option<String>> {
+        let mut data = json!({ "name": name });
         Template::merge(&mut data, self.config.clone());
         debug!("service template params\n: {}", &data);
         self.render(&data, SERVICE)
     }
 
-    pub fn ingress(&self, name: &String) -> Result<Option<String>> {
-        let mut data = json!({"name": name});
+    pub fn ingress(&self, name: &str) -> Result<Option<String>> {
+        let mut data = json!({ "name": name });
         Template::merge(&mut data, self.config.clone());
         debug!("ingress template params\n: {}", &data);
         self.render(&data, INGRESS)
     }
 
-    pub fn configmap(&self, name: &String) -> Result<Option<String>> {
-        let mut data = json!({"name": name});
+    pub fn configmap(&self, name: &str) -> Result<Option<String>> {
+        let mut data = json!({ "name": name });
         Template::merge(&mut data, self.config.clone());
         debug!("configmap template params\n: {}", &data);
         self.render(&data, CONFIGMAP)
     }
 
     fn render(&self, data: &Value, template: &str) -> Result<Option<String>> {
-        self.handlebars.render(template, &data)
-            .map_err(|e| Error::new(e))
-            .and_then(|s| if s.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(s))
-            })
+        self.handlebars
+            .render(template, &data)
+            .map_err(Error::new)
+            .map(|s| if s.is_empty() { None } else { Some(s) })
     }
 
-    fn statefulset(&self, name: &String, replicas: &u8, image_name: &Option<String>,
-                   storage_class: &Option<String>, template: &str) -> Result<Option<String>> {
+    fn statefulset(
+        &self,
+        name: &str,
+        replicas: &u8,
+        image_name: &Option<String>,
+        storage_class: &Option<String>,
+        template: &str,
+    ) -> Result<Option<String>> {
         let mut data = json!({
             "name": name,
             "image" : image_name,

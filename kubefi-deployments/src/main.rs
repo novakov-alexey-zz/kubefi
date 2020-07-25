@@ -12,17 +12,17 @@ use anyhow::{Error, Result};
 use dotenv::dotenv;
 use futures::{StreamExt, TryStreamExt};
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
-use kube::api::{Api, PostParams};
 use kube::api::Meta;
 use kube::api::WatchEvent;
-use kube::Client;
+use kube::api::{Api, PostParams};
 use kube::runtime::Informer;
+use kube::Client;
 use tokio::time::{delay_for, Duration};
 
-use kubefi_deployments::{get_api, read_namespace};
 use kubefi_deployments::controller::{NiFiController, ReplaceStatus};
 use kubefi_deployments::crd::{create_new_version, delete_old_version, NiFiDeployment};
 use kubefi_deployments::operator_config::read_config;
+use kubefi_deployments::{get_api, read_namespace};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -47,22 +47,28 @@ async fn main() -> Result<()> {
     let informer = Informer::new(api.clone());
     let config = read_config()?;
     debug!("Loaded config {}", config);
-    let controller = NiFiController::new(namespace, client, config,
-                                         Path::new("./templates"))?;
+    let controller = NiFiController::new(namespace, client, config, Path::new("./templates"))?;
 
-    info!("Starting Kubefi event loop for {:?}",
-          std::any::type_name::<NiFiDeployment>().split("::").last().unwrap());
+    info!(
+        "Starting Kubefi event loop for {:?}",
+        std::any::type_name::<NiFiDeployment>()
+            .split("::")
+            .last()
+            .unwrap()
+    );
 
     let mut stream = informer.poll().await?.boxed();
     while let Some(event) = stream.try_next().await? {
         let status = handle_event(&controller, event.clone()).await?;
         match status {
             Some(s) => replace_status(&api, s).await,
-            None => Ok(())
+            None => Ok(()),
         }?;
     }
 
-    Err(Error::msg("Event stream for NiFiDeployment was closed, exiting...".to_string()))
+    Err(Error::msg(
+        "Event stream for NiFiDeployment was closed, exiting...".to_string(),
+    ))
 }
 
 async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<()> {
@@ -70,7 +76,11 @@ async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<(
     resource.status = Some(s.status);
     let pp = PostParams::default();
     let data = serde_json::to_vec(&resource)?;
-    match api.replace_status(s.name.as_str(), &pp, data).await.map(|_| ()) {
+    match api
+        .replace_status(s.name.as_str(), &pp, data)
+        .await
+        .map(|_| ())
+    {
         Ok(_) => {
             info!("Status updated");
             Ok(())
@@ -82,7 +92,10 @@ async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<(
     }
 }
 
-async fn handle_event(controller: &NiFiController, event: WatchEvent<NiFiDeployment>) -> Result<Option<ReplaceStatus>> {
+async fn handle_event(
+    controller: &NiFiController,
+    event: WatchEvent<NiFiDeployment>,
+) -> Result<Option<ReplaceStatus>> {
     match event {
         WatchEvent::Added(o) => {
             let spec = o.spec.clone();
@@ -107,7 +120,10 @@ async fn handle_event(controller: &NiFiController, event: WatchEvent<NiFiDeploym
             Ok(None)
         }
         WatchEvent::Bookmark(o) => {
-            warn!("Got bookmark {:?}. It is not supported yet by this operator!", o);
+            warn!(
+                "Got bookmark {:?}. It is not supported yet by this operator!",
+                o
+            );
             Ok(None)
         }
     }

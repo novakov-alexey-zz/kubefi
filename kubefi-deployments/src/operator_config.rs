@@ -4,10 +4,8 @@ use serde_json::{Number, Value};
 
 pub fn read_config() -> Result<Value> {
     debug!("Loading config...");
-    let hocon = HoconLoader::new()
-        .load_file("./conf/nifi.conf")?
-        .hocon()?;
-    hocon_to_json(hocon).ok_or(Error::msg("Failed to convert config file to JSON"))
+    let hocon = HoconLoader::new().load_file("./conf/nifi.conf")?.hocon()?;
+    hocon_to_json(hocon).ok_or_else(|| Error::msg("Failed to convert config file to JSON"))
 }
 
 fn hocon_to_json(hocon: Hocon) -> Option<Value> {
@@ -15,7 +13,7 @@ fn hocon_to_json(hocon: Hocon) -> Option<Value> {
         Hocon::Boolean(b) => Some(Value::Bool(b)),
         Hocon::Integer(i) => Some(Value::Number(Number::from(i))),
         Hocon::Real(f) => Some(Value::Number(
-            Number::from_f64(f).unwrap_or(Number::from(0)),
+            Number::from_f64(f).unwrap_or_else(|| Number::from(0)),
         )),
         Hocon::String(s) => Some(Value::String(s)),
         Hocon::Array(vec) => Some(Value::Array(
@@ -34,4 +32,3 @@ fn hocon_to_json(hocon: Hocon) -> Option<Value> {
         Hocon::BadValue(_) => None,
     }
 }
-
