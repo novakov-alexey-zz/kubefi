@@ -12,12 +12,16 @@ pub struct Template {
 }
 
 const NIFI_STATEFULSET: &str = "nifi-statefulset";
-const ZK_STATEFULSET: &str = "zk-statefulset";
 const NIFI_SERVICE: &str = "nifi-service";
-const ZK_SERVICE: &str = "zk-service";
-const INGRESS: &str = "ingress";
+const NIFI_HEADLESS_SERVICE: &str = "nifi-headless-service";
 const NIFI_CONFIGMAP: &str = "nifi-configmap";
+const INGRESS: &str = "ingress";
+
+const ZK_STATEFULSET: &str = "zk-statefulset";
+const ZK_SERVICE: &str = "zk-service";
+const ZK_HEADLESS_SERVICE: &str = "zk-headless-service";
 const ZK_CONFIGMAP: &str = "zk-configmap";
+
 const TEMPLATE_FILE_EXTENSION: &str = ".yaml";
 
 impl Template {
@@ -53,8 +57,16 @@ impl Template {
         self.service(name, NIFI_SERVICE)
     }
 
+    pub fn nifi_headless_service(&self, name: &str) -> Result<Option<String>> {
+        self.service(name, NIFI_HEADLESS_SERVICE)
+    }
+
     pub fn zk_service(&self, name: &str) -> Result<Option<String>> {
         self.service(name, ZK_SERVICE)
+    }
+
+    pub fn zk_headless_service(&self, name: &str) -> Result<Option<String>> {
+        self.service(name, ZK_HEADLESS_SERVICE)
     }
 
     fn service(&self, name: &str, template: &str) -> Result<Option<String>> {

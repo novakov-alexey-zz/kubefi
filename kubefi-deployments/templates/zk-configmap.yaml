@@ -3,6 +3,7 @@ kind: ConfigMap
 metadata:
   labels:
     app: zookeeper
+    release: nifi
     app.kubernetes.io/managed-by: Kubefi
     heritage: Kubefi
   name: {{ name }}-zookeeper

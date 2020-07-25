@@ -3,16 +3,16 @@ extern crate kube;
 extern crate kube_derive;
 extern crate serde;
 
-use std::{error, fmt};
 use std::path::Path;
+use std::{error, fmt};
 
 use anyhow::Error;
 use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::core::v1::{ConfigMap, Service};
 use k8s_openapi::api::extensions::v1beta1::Ingress;
 use k8s_openapi::Resource;
-use kube::{Api, Client};
 use kube::api::{Meta, PostParams};
+use kube::{Api, Client};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
@@ -20,8 +20,8 @@ use serde_json::Value;
 use crate::anyhow::Result;
 use crate::controller::ControllerError::MissingProperty;
 use crate::crd::{NiFiDeployment, NiFiDeploymentSpec, NiFiDeploymentStatus};
-use crate::Namespace;
 use crate::template::Template;
+use crate::Namespace;
 
 #[derive(Debug)]
 pub enum ControllerError {
@@ -135,22 +135,42 @@ impl NiFiController {
         let (r1, r2) = futures::future::join(nifi, zk).await;
         r1.and(r2)?;
 
-        let nifi_service = self.create_from_yaml::<Service, _>(&name, &name, &ns, |name| {
+        let service = self.create_from_yaml::<Service, _>(&name, &name, &ns, |name| {
             self.template.nifi_service(name)
         });
 
+        let headless_service_name = format!("{}-headless", &name);
+        let headless_service =
+            self.create_from_yaml::<Service, _>(&headless_service_name, &name, &ns, |name| {
+                self.template.nifi_headless_service(name)
+            });
+
         let zk_service_name = format!("{}-zookeeper", &name);
-        let zk_service = self.create_from_yaml::<Service, _>(&zk_service_name, &name, &ns, |name| {
-            self.template.zk_service(name)
-        });
+        let zk_service =
+            self.create_from_yaml::<Service, _>(&zk_service_name, &name, &ns, |name| {
+                self.template.zk_service(name)
+            });
+
+        let zk_headless_service_name = format!("{}-zookeeper-headless", &name);
+        let zk_headless_service =
+            self.create_from_yaml::<Service, _>(&zk_headless_service_name, &name, &ns, |name| {
+                self.template.zk_headless_service(name)
+            });
 
         let ingress_name = format!("{}-ingress", &name);
         let ingress = self.create_from_yaml::<Ingress, _>(&ingress_name, &name, &ns, |name| {
             self.template.ingress(name)
         });
 
-        let (r1, r2, r3) = futures::future::join3(nifi_service, zk_service, ingress).await;
-        r1.and(r2).and(r3)?;
+        let (r1, r2, r3, r4, r5) = futures::future::join5(
+            service,
+            headless_service,
+            zk_service,
+            zk_headless_service,
+            ingress,
+        )
+        .await;
+        r1.and(r2).and(r3).and(r4).and(r5)?;
 
         Ok(())
     }
