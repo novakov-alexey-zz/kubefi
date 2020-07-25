@@ -82,7 +82,7 @@ mod tests {
             .expect("Failed to create template engine");
         let name = "test".to_string();
         let content = template
-            .configmap(&name)
+            .nifi_configmap(&name)
             .expect("Failed to render configmap template");
         println!("content:\n{}", content.unwrap())
     }

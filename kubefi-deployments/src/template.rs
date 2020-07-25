@@ -13,9 +13,11 @@ pub struct Template {
 
 const NIFI_STATEFULSET: &str = "nifi-statefulset";
 const ZK_STATEFULSET: &str = "zk-statefulset";
-const SERVICE: &str = "service";
+const NIFI_SERVICE: &str = "nifi-service";
+const ZK_SERVICE: &str = "zk-service";
 const INGRESS: &str = "ingress";
-const CONFIGMAP: &str = "configmap";
+const NIFI_CONFIGMAP: &str = "nifi-configmap";
+const ZK_CONFIGMAP: &str = "zk-configmap";
 const TEMPLATE_FILE_EXTENSION: &str = ".yaml";
 
 impl Template {
@@ -47,25 +49,44 @@ impl Template {
         self.statefulset(name, replicas, image_name, storage_class, ZK_STATEFULSET)
     }
 
-    pub fn service(&self, name: &str) -> Result<Option<String>> {
-        let mut data = json!({ "name": name });
-        Template::merge(&mut data, self.config.clone());
-        debug!("service template params\n: {}", &data);
-        self.render(&data, SERVICE)
+    pub fn nifi_service(&self, name: &str) -> Result<Option<String>> {
+        self.service(name, NIFI_SERVICE)
+    }
+
+    pub fn zk_service(&self, name: &str) -> Result<Option<String>> {
+        self.service(name, ZK_SERVICE)
+    }
+
+    fn service(&self, name: &str, template: &str) -> Result<Option<String>> {
+        let data = self.get_config(name);
+        debug!("service template {} params\n: {}", &template, &data);
+        self.render(&data, template)
     }
 
     pub fn ingress(&self, name: &str) -> Result<Option<String>> {
-        let mut data = json!({ "name": name });
-        Template::merge(&mut data, self.config.clone());
+        let data = self.get_config(name);
         debug!("ingress template params\n: {}", &data);
         self.render(&data, INGRESS)
     }
 
-    pub fn configmap(&self, name: &str) -> Result<Option<String>> {
+    fn get_config(&self, name: &str) -> Value {
         let mut data = json!({ "name": name });
-        Template::merge(&mut data, self.config.clone());
-        debug!("configmap template params\n: {}", &data);
-        self.render(&data, CONFIGMAP)
+        Template::merge_json(&mut data, self.config.clone());
+        data
+    }
+
+    pub fn nifi_configmap(&self, name: &str) -> Result<Option<String>> {
+        self.configmap(name, NIFI_CONFIGMAP)
+    }
+
+    pub fn zk_configmap(&self, name: &str) -> Result<Option<String>> {
+        self.configmap(name, ZK_CONFIGMAP)
+    }
+
+    fn configmap(&self, name: &str, template: &str) -> Result<Option<String>> {
+        let data = self.get_config(name);
+        debug!("{} template params\n: {}", template, &data);
+        self.render(&data, template)
     }
 
     fn render(&self, data: &Value, template: &str) -> Result<Option<String>> {
@@ -89,19 +110,19 @@ impl Template {
             "replicas": &replicas.to_string(),
             "storage_class": storage_class
         });
-        Template::merge(&mut data, self.config.clone());
+        Template::merge_json(&mut data, self.config.clone());
         debug!("statefulset template params\n: {}", &data);
         self.render(&data, template)
     }
 
-    fn merge(a: &mut Value, b: Value) {
+    fn merge_json(a: &mut Value, b: Value) {
         if let Value::Object(a) = a {
             if let Value::Object(b) = b {
                 for (k, v) in b {
                     if v.is_null() {
                         a.remove(&k);
                     } else {
-                        Template::merge(a.entry(k).or_insert(Value::Null), v);
+                        Template::merge_json(a.entry(k).or_insert(Value::Null), v);
                     }
                 }
                 return;

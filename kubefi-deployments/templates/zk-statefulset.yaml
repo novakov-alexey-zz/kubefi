@@ -3,8 +3,8 @@ kind: StatefulSet
 metadata:  
   labels:
     app: zookeeper
-    app.kubernetes.io/managed-by: Kubefi    
-    component: server
+    release: nifi
+    app.kubernetes.io/managed-by: Kubefi
     heritage: Kubefi    
   name: {{ name }}-zookeeper
 spec:
@@ -14,13 +14,12 @@ spec:
   selector:
     matchLabels:
       app: zookeeper
-      component: server      
-  serviceName: nifi-zookeeper-headless
+      release: nifi
+  serviceName: {{ name }}-zookeeper-headless
   template:
     metadata:      
       labels:
         app: zookeeper
-        component: server
         release: nifi
     spec:
       containers:
@@ -57,7 +56,7 @@ spec:
           value: "false"
         - name: ZOO_TICK_TIME
           value: "4000"
-        image: {{ zk_image }}
+        image: {{ zkImage }}
         imagePullPolicy: IfNotPresent
         livenessProbe:
           exec:
@@ -108,13 +107,12 @@ spec:
       volumes:
       - configMap:
           defaultMode: 365
-          name: nifi-zookeeper
+          name: {{ name }}-zookeeper
         name: config
   updateStrategy:
     type: RollingUpdate
   volumeClaimTemplates:
   - metadata:
-      creationTimestamp: null
       name: data
     spec:
       accessModes:
@@ -123,5 +121,5 @@ spec:
       resources:
         requests:
           storage: 5Gi
-      storageClassName: {{ storage_class }}
+      storageClassName: {{ storageClass }}
       volumeMode: Filesystem    

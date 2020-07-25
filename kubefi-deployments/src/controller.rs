@@ -3,16 +3,16 @@ extern crate kube;
 extern crate kube_derive;
 extern crate serde;
 
-use std::path::Path;
 use std::{error, fmt};
+use std::path::Path;
 
 use anyhow::Error;
 use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::core::v1::{ConfigMap, Service};
 use k8s_openapi::api::extensions::v1beta1::Ingress;
 use k8s_openapi::Resource;
-use kube::api::{Meta, PostParams};
 use kube::{Api, Client};
+use kube::api::{Meta, PostParams};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
@@ -20,8 +20,8 @@ use serde_json::Value;
 use crate::anyhow::Result;
 use crate::controller::ControllerError::MissingProperty;
 use crate::crd::{NiFiDeployment, NiFiDeploymentSpec, NiFiDeploymentStatus};
-use crate::template::Template;
 use crate::Namespace;
+use crate::template::Template;
 
 #[derive(Debug)]
 pub enum ControllerError {
@@ -115,7 +115,19 @@ impl NiFiController {
             .namespace
             .ok_or_else(|| MissingProperty("namespace".to_string(), d.kind.clone()))?;
 
-        self.create_configmap(name, &ns).await?;
+        let zk_cm_name = format!("{}-zookeeper", &name);
+        let zk_cm = self.create_from_yaml::<ConfigMap, _>(&zk_cm_name, &name, &ns, |name: &str| {
+            self.template.zk_configmap(name)
+        });
+
+        let nifi_cm_name = format!("{}-config", &name);
+        let nifi_cm =
+            self.create_from_yaml::<ConfigMap, _>(&nifi_cm_name, &name, &ns, |name: &str| {
+                self.template.nifi_configmap(name)
+            });
+
+        let (r1, r2) = futures::future::join(zk_cm, nifi_cm).await;
+        r1.and(r2)?;
 
         let statefulsets: Api<StatefulSet> = self.get_api(&ns);
         let nifi = self.create_nifi_set(&d.spec, &name, &statefulsets);
@@ -123,60 +135,49 @@ impl NiFiController {
         let (r1, r2) = futures::future::join(nifi, zk).await;
         r1.and(r2)?;
 
-        self.create_service(&name, &ns).await?;
-        self.create_ingress(&name, &ns).await?;
+        let nifi_service = self.create_from_yaml::<Service, _>(&name, &name, &ns, |name| {
+            self.template.nifi_service(name)
+        });
+
+        let zk_service_name = format!("{}-zookeeper", &name);
+        let zk_service = self.create_from_yaml::<Service, _>(&zk_service_name, &name, &ns, |name| {
+            self.template.zk_service(name)
+        });
+
+        let ingress_name = format!("{}-ingress", &name);
+        let ingress = self.create_from_yaml::<Ingress, _>(&ingress_name, &name, &ns, |name| {
+            self.template.ingress(name)
+        });
+
+        let (r1, r2, r3) = futures::future::join3(nifi_service, zk_service, ingress).await;
+        r1.and(r2).and(r3)?;
+
         Ok(())
     }
 
-    async fn create_configmap(&self, name: &str, ns: &str) -> Result<Option<ConfigMap>> {
-        let api: Api<ConfigMap> = self.get_api(&ns);
+    async fn create_from_yaml<
+        T: Resource + Serialize + Clone + DeserializeOwned + Meta,
+        F: FnOnce(&str) -> Result<Option<String>>,
+    >(
+        &self,
+        name: &str,
+        cr_name: &str,
+        ns: &str,
+        yaml: F,
+    ) -> Result<Option<T>> {
+        let api: Api<T> = self.get_api(&ns);
         match api.get(&name).await {
             Err(_) => {
-                let yaml = self.template.configmap(&name)?;
+                let yaml = yaml(&cr_name)?;
                 match yaml {
                     Some(y) => {
-                        let configmap = NiFiController::from_yaml(&y)?;
-                        self.create_resource(&api, configmap).await.map(Some)
+                        let resource = NiFiController::from_yaml(&y)?;
+                        self.create_resource(&api, resource).await.map(Some)
                     }
                     None => Ok(None),
                 }
             }
             Ok(cm) => Ok(Some(cm)),
-        }
-    }
-
-    async fn create_ingress(&self, name: &str, ns: &str) -> Result<Option<Ingress>> {
-        let api: Api<Ingress> = self.get_api(&ns);
-        match api.get(&name).await {
-            Err(_) => {
-                let yaml = self.template.ingress(&name)?;
-                debug!("ingress yaml:\n{:?}", &yaml);
-                match yaml {
-                    Some(y) => {
-                        let nifi_ingress = NiFiController::from_yaml(&y)?;
-                        self.create_resource(&api, nifi_ingress).await.map(Some)
-                    }
-                    None => Ok(None),
-                }
-            }
-            Ok(s) => Ok(Some(s)),
-        }
-    }
-
-    async fn create_service(&self, name: &str, ns: &str) -> Result<Option<Service>> {
-        let api: Api<Service> = self.get_api(&ns);
-        match api.get(&name).await {
-            Err(_) => {
-                let yaml = self.template.service(&name)?;
-                match yaml {
-                    Some(y) => {
-                        let nifi_service = NiFiController::from_yaml::<Service>(&y)?;
-                        self.create_resource(&api, nifi_service).await.map(Some)
-                    }
-                    None => Ok(None),
-                }
-            }
-            Ok(s) => Ok(Some(s)),
         }
     }
 

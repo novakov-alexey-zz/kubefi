@@ -70,7 +70,6 @@ pub async fn create_new_version(
     match crds.create(&pp, &crd).await {
         Ok(o) => {
             info!("Created {} ({:?})", Meta::name(&o), o.status.unwrap());
-            debug!("Created CRD: {:?}", o.spec);
             Ok(())
         }
         Err(kube::Error::Api(ae)) => match ae.code {

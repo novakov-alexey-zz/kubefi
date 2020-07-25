@@ -3,6 +3,7 @@ kind: StatefulSet
 metadata:    
   labels:
     app: nifi
+    release: nifi
     app.kubernetes.io/managed-by: Kubefi    
     heritage: Kubefi    
   name: {{ name }}
@@ -12,14 +13,16 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: nifi    
-  serviceName: nifi-headless
+      app: nifi
+      release: nifi
+  serviceName: {{ name }}-headless
   template:
     metadata:
       annotations:        
         security.alpha.kubernetes.io/sysctls: net.ipv4.ip_local_port_range=10000 65000      
       labels:
-        app: nifi        
+        app: nifi
+        release: nifi
         heritage: Kubefi        
     spec:
       affinity:
@@ -68,7 +71,7 @@ spec:
           exec bin/nifi.sh run
         env:
         - name: NIFI_ZOOKEEPER_CONNECT_STRING
-          value: nifi-zookeeper:2181
+          value: {{ name }}-zookeeper:2181
         image: {{ image }}
         imagePullPolicy: IfNotPresent
         lifecycle:
@@ -156,6 +159,7 @@ spec:
         - mountPath: /opt/nifi/nifi-current/conf/zookeeper.properties
           name: zookeeper-properties
           subPath: zookeeper.properties
+        {{# if kerberos.enabled }}
         - mountPath: /opt/nifi/secret/nifi.keytab
           name: nifi-service-keytab
           readOnly: true
@@ -163,7 +167,8 @@ spec:
         - mountPath: /etc/krb5.conf
           name: nifi-krb5-conf
           readOnly: true
-          subPath: krb5.conf                
+          subPath: krb5.conf
+        {{/if}}
       - args:
         - tail
         - -n+1
@@ -232,8 +237,8 @@ spec:
         - sh
         - -c
         - |
-          echo trying to contact nifi-zookeeper 2181
-          until nc -vzw 1 nifi-zookeeper 2181; do
+          echo trying to contact {{ name }}-zookeeper 2181
+          until nc -vzw 1 {{ name }}-zookeeper 2181; do
             echo "waiting for zookeeper..."
             sleep 2
           done
@@ -255,64 +260,65 @@ spec:
           items:
           - key: bootstrap.conf
             path: bootstrap.conf
-          name: nifi-config
+          name: {{ name }}-config
         name: bootstrap-conf
       - configMap:
           defaultMode: 420
           items:
           - key: nifi.properties
             path: nifi.temp
-          name: nifi-config
+          name: {{ name }}-config
         name: nifi-properties
       - configMap:
           defaultMode: 420
           items:
           - key: authorizers.xml
             path: authorizers.temp
-          name: nifi-config
+          name: {{ name }}-config
         name: authorizers-temp
       - configMap:
           defaultMode: 420
           items:
           - key: authorizers-empty.xml
             path: authorizers.empty
-          name: nifi-config
+          name: {{ name }}-config
         name: authorizers-empty
       - configMap:
           defaultMode: 420
           items:
           - key: bootstrap-notification-services.xml
             path: bootstrap-notification-services.xml
-          name: nifi-config
+          name: {{ name }}-config
         name: bootstrap-notification-services-xml
       - configMap:
           defaultMode: 420
           items:
           - key: logback.xml
             path: logback.xml
-          name: nifi-config
+          name: {{ name }}-config
         name: logback-xml
       - configMap:
           defaultMode: 420
           items:
           - key: login-identity-providers.xml
             path: login-identity-providers.xml
-          name: nifi-config
+          name: {{ name }}-config
         name: login-identity-providers-xml
       - configMap:
           defaultMode: 420
           items:
           - key: state-management.xml
             path: state-management.xml
-          name: nifi-config
+          name: {{ name }}-config
         name: state-management-xml
       - configMap:
           defaultMode: 420
           items:
           - key: zookeeper.properties
             path: zookeeper.properties
-          name: nifi-config
+          name: {{ name }}-config
         name: zookeeper-properties
+      {{# if kerberos.enabled }}
       - name: nifi-service-keytab
         secret:
           defaultMode: 420
@@ -320,7 +326,8 @@ spec:
       - configMap:
           defaultMode: 420
           name: krb5-conf
-        name: nifi-krb5-conf                  
+        name: nifi-krb5-conf
+      {{/if}}
   updateStrategy:
     rollingUpdate:
       partition: 0
@@ -334,10 +341,9 @@ spec:
       resources:
         requests:
           storage: 1Gi
-      storageClassName: {{ storage_class }}
+      storageClassName: {{ storageClass }}
       volumeMode: Filesystem    
   - metadata:
-      creationTimestamp: null
       name: flowfile-repository
     spec:
       accessModes:
@@ -345,7 +351,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: {{ storage_class }}
+      storageClassName: {{ storageClass }}
       volumeMode: Filesystem    
   - metadata:      
       name: content-repository
@@ -355,7 +361,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: {{ storage_class }}
+      storageClassName: {{ storageClass }}
       volumeMode: Filesystem    
   - metadata:      
       name: provenance-repository
@@ -365,7 +371,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: {{ storage_class }}
+      storageClassName: {{ storageClass }}
       volumeMode: Filesystem    
   - metadata:      
       name: logs
@@ -375,5 +381,5 @@ spec:
       resources:
         requests:
           storage: 5Gi
-      storageClassName: {{ storage_class }}
+      storageClassName: {{ storageClass }}
       volumeMode: Filesystem 
