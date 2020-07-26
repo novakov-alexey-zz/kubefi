@@ -21,9 +21,9 @@ pub const CRD_NAME: &str = "nifideployments.io.github.novakov-alexey";
     group = "io.github.novakov-alexey",
     version = "v1",
     namespaced,
-    shortname = "nidp"
+    shortname = "nidp",
+    status = "NiFiDeploymentStatus"
 )]
-#[kube(status = "NiFiDeploymentStatus")]
 pub struct NiFiDeploymentSpec {
     pub nifi_replicas: u8,
     pub zk_replicas: u8,

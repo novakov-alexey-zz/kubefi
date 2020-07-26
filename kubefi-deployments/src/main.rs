@@ -34,12 +34,12 @@ async fn main() -> Result<()> {
     // Manage CRDs first
     let crds: Api<CustomResourceDefinition> = Api::all(client.clone());
 
-    delete_old_version(crds.clone()).await?;
-    delay_for(Duration::from_secs(2)).await;
-
-    let schema = fs::read_to_string("conf/schema.json")?;
-    create_new_version(crds, schema).await?;
-    delay_for(Duration::from_secs(1)).await;
+    // delete_old_version(crds.clone()).await?;
+    // delay_for(Duration::from_secs(2)).await;
+    //
+    // let schema = fs::read_to_string("conf/schema.json")?;
+    // create_new_version(crds, schema).await?;
+    // delay_for(Duration::from_secs(1)).await;
 
     let namespace = read_namespace();
     let api: Api<NiFiDeployment> = get_api(&namespace, client.clone());
@@ -60,10 +60,10 @@ async fn main() -> Result<()> {
     let mut stream = informer.poll().await?.boxed();
     while let Some(event) = stream.try_next().await? {
         let status = handle_event(&controller, event.clone()).await?;
-        match status {
-            Some(s) => replace_status(&api, s).await,
-            None => Ok(()),
-        }?;
+        // match status {
+        //     Some(s) => replace_status(&api, s).await,
+        //     None => Ok(()),
+        // }?;
     }
 
     Err(Error::msg(
