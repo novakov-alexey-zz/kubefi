@@ -4,9 +4,9 @@ extern crate serde_json;
 use std::fmt::Debug;
 
 use anyhow::Result;
-use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::{
-    CustomResourceDefinition, CustomResourceDefinitionSpec, CustomResourceDefinitionVersion,
-    CustomResourceValidation, JSONSchemaProps,
+use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1beta1::{
+    CustomResourceDefinition, CustomResourceDefinitionSpec, CustomResourceValidation,
+    JSONSchemaProps,
 };
 use kube::api::{DeleteParams, Meta, PostParams};
 use kube::Api;
@@ -22,7 +22,9 @@ pub const CRD_NAME: &str = "nifideployments.io.github.novakov-alexey";
     version = "v1",
     namespaced,
     shortname = "nidp",
-    status = "NiFiDeploymentStatus"
+    status = "NiFiDeploymentStatus",
+    printcolumn = r#"{"name":"Replicas", "jsonPath": ".spec.nifi_replicas", "type": "integer"}"#,
+    apiextensions = "v1beta1"
 )]
 pub struct NiFiDeploymentSpec {
     pub nifi_replicas: u8,
@@ -34,7 +36,7 @@ pub struct NiFiDeploymentSpec {
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 pub struct NiFiDeploymentStatus {
-    pub error: String,
+    pub error_msg: String,
     pub last_action: String,
 }
 
@@ -83,12 +85,9 @@ pub async fn create_new_version(
 fn with_schema(schema: JSONSchemaProps, crd: CustomResourceDefinition) -> CustomResourceDefinition {
     CustomResourceDefinition {
         spec: CustomResourceDefinitionSpec {
-            versions: vec![CustomResourceDefinitionVersion {
-                schema: Some(CustomResourceValidation {
-                    open_api_v3_schema: Some(schema),
-                }),
-                ..crd.spec.versions[0].clone()
-            }],
+            validation: Some(CustomResourceValidation {
+                open_api_v3_schema: Some(schema.clone()),
+            }),
             ..crd.spec
         },
         ..crd
