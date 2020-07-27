@@ -16,13 +16,13 @@ pub fn get_files_helper(
         .param(0)
         .ok_or_else(|| RenderError::new("get_files 'path' parameter at index 0 is missing"))?
         .render();
-    let ident_param = h
+    let indent_param = h
         .param(1)
-        .ok_or_else(|| RenderError::new("get_files 'ident' parameter at index 1 is missing"))?
+        .ok_or_else(|| RenderError::new("get_files 'indent' parameter at index 1 is missing"))?
         .value()
         .as_u64()
         .ok_or_else(|| {
-            RenderError::new("get_files 'ident' parameter expected to be unsigned int")
+            RenderError::new("get_files 'indent' parameter expected to be unsigned int")
         })? as usize;
     let template_dir_path = format!("./templates/{}", path_param);
     let path = Path::new(&template_dir_path);
@@ -40,7 +40,7 @@ pub fn get_files_helper(
                         .map(|l| {
                             format!(
                                 "{}{}\n",
-                                format_args!("{: >1$}", "", ident_param),
+                                format_args!("{: >1$}", "", indent_param),
                                 l.unwrap_or_else(|_| panic!(
                                     "Failed to read a line from file: {:?}",
                                     f
@@ -63,7 +63,7 @@ pub fn get_files_helper(
         Ok(())
     } else {
         Err(RenderError::new(format!(
-            "templates path '{:?}' does not exist",
+            "templates path {:?} does not exist",
             &path
         )))
     }
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn print_template() {
-        let config = super::super::operator_config::read_config().expect("Failed to load config");
+        let config = super::super::config::read_nifi_config().expect("Failed to load config");
         let template = Template::new(Path::new("./templates"), config)
             .expect("Failed to create template engine");
         let name = "test".to_string();

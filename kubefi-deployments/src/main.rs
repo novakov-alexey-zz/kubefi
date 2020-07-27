@@ -7,7 +7,7 @@ extern crate kubefi_deployments;
 extern crate log;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Error, Result};
 use dotenv::dotenv;
@@ -19,9 +19,9 @@ use kube::Client;
 use kube_runtime::watcher::Event;
 use tokio::time::{delay_for, Duration};
 
+use kubefi_deployments::config::{read_kubefi_config, read_nifi_config};
 use kubefi_deployments::controller::{NiFiController, ReplaceStatus};
 use kubefi_deployments::crd::{create_new_version, delete_old_version, NiFiDeployment};
-use kubefi_deployments::operator_config::read_config;
 use kubefi_deployments::{get_api, read_namespace};
 
 #[tokio::main]
@@ -29,23 +29,19 @@ async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::init();
 
+    let kubefi_cfg = read_kubefi_config()?;
     let client = Client::try_default().await?;
 
-    // Manage CRDs first
     let crds: Api<CustomResourceDefinition> = Api::all(client.clone());
-
-    delete_old_version(crds.clone()).await?;
-    delay_for(Duration::from_secs(2)).await;
-
-    let schema = fs::read_to_string("conf/schema.json")?;
-    create_new_version(crds, schema).await?;
-    delay_for(Duration::from_secs(1)).await;
+    if kubefi_cfg.replace_existing_crd {
+        replace_crd(crds, kubefi_cfg.crd_schema_path).await?;
+    }
 
     let namespace = read_namespace();
-    let api: Api<NiFiDeployment> = get_api(&namespace, client.clone());
+    let api = get_api::<NiFiDeployment>(&namespace, client.clone());
 
     let mut watcher = kube_runtime::watcher(api.clone(), ListParams::default()).boxed();
-    let config = read_config()?;
+    let config = read_nifi_config()?;
     debug!("Loaded config {}", config);
     let controller =
         NiFiController::new(namespace, client.clone(), config, Path::new("./templates"))?;
@@ -72,6 +68,16 @@ async fn main() -> Result<()> {
     Err(Error::msg(
         "Event stream for NiFiDeployment was closed, exiting...".to_string(),
     ))
+}
+
+async fn replace_crd(crds: Api<CustomResourceDefinition>, schema: PathBuf) -> Result<()> {
+    delete_old_version(crds.clone()).await?;
+    delay_for(Duration::from_secs(2)).await;
+
+    let schema = fs::read_to_string(schema)?;
+    create_new_version(crds, schema).await?;
+    delay_for(Duration::from_secs(1)).await;
+    Ok(())
 }
 
 async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<()> {

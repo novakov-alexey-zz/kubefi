@@ -1,9 +1,25 @@
+use std::path::PathBuf;
+
 use anyhow::{Error, Result};
 use hocon::{Hocon, HoconLoader};
+use serde::Deserialize;
 use serde_json::{Number, Value};
 
-pub fn read_config() -> Result<Value> {
-    debug!("Loading config...");
+#[derive(Deserialize)]
+pub struct KubefiConfig {
+    pub crd_schema_path: PathBuf,
+    pub replace_existing_crd: bool,
+}
+
+pub fn read_kubefi_config() -> Result<KubefiConfig, Error> {
+    let cfg: KubefiConfig = HoconLoader::new()
+        .load_file("./conf/kubefi.conf")?
+        .resolve()?;
+    Ok(cfg)
+}
+
+pub fn read_nifi_config() -> Result<Value> {
+    debug!("Loading nifi config...");
     let hocon = HoconLoader::new().load_file("./conf/nifi.conf")?.hocon()?;
     hocon_to_json(hocon).ok_or_else(|| Error::msg("Failed to convert config file to JSON"))
 }

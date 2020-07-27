@@ -14,10 +14,10 @@ use kube::{Api, Client};
 
 use crate::Namespace::*;
 
+pub mod config;
 pub mod controller;
 pub mod crd;
 mod handelbars_ext;
-pub mod operator_config;
 mod template;
 
 pub enum Namespace {

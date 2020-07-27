@@ -103,10 +103,6 @@ impl NiFiController {
         Ok(Some(ReplaceStatus { name, ns, status }))
     }
 
-    pub async fn on_modify(&self, d: NiFiDeployment) -> Result<Option<ReplaceStatus>> {
-        self.handle_action(d, "modify".to_string()).await
-    }
-
     pub async fn on_delete(&self, d: NiFiDeployment) -> Result<()> {
         let ns = NiFiController::read_namespace(&d)?;
         let params = &DeleteParams::default();
@@ -192,25 +188,24 @@ impl NiFiController {
         let (r1, r2) = futures::future::join(nifi, zk).await;
         r1.and(r2)?;
 
-        let service = self.create_from_yaml::<Service, _>(&name, &name, &ns, |name| {
+        let svc = self.create_from_yaml::<Service, _>(&name, &name, &ns, |name| {
             self.template.nifi_service(name)
         });
 
-        let headless_service_name = format!("{}-headless", &name);
-        let headless_service =
-            self.create_from_yaml::<Service, _>(&headless_service_name, &name, &ns, |name| {
+        let headless_svc_name = format!("{}-headless", &name);
+        let headless_svc =
+            self.create_from_yaml::<Service, _>(&headless_svc_name, &name, &ns, |name| {
                 self.template.nifi_headless_service(name)
             });
 
-        let zk_service_name = format!("{}-zookeeper", &name);
-        let zk_service =
-            self.create_from_yaml::<Service, _>(&zk_service_name, &name, &ns, |name| {
-                self.template.zk_service(name)
-            });
+        let zk_svc_name = format!("{}-zookeeper", &name);
+        let zk_svc = self.create_from_yaml::<Service, _>(&zk_svc_name, &name, &ns, |name| {
+            self.template.zk_service(name)
+        });
 
-        let zk_headless_service_name = format!("{}-zookeeper-headless", &name);
-        let zk_headless_service =
-            self.create_from_yaml::<Service, _>(&zk_headless_service_name, &name, &ns, |name| {
+        let zk_headless_svc_name = format!("{}-zookeeper-headless", &name);
+        let zk_headless_svc =
+            self.create_from_yaml::<Service, _>(&zk_headless_svc_name, &name, &ns, |name| {
                 self.template.zk_headless_service(name)
             });
 
@@ -219,14 +214,8 @@ impl NiFiController {
             self.template.ingress(name)
         });
 
-        let (r1, r2, r3, r4, r5) = futures::future::join5(
-            service,
-            headless_service,
-            zk_service,
-            zk_headless_service,
-            ingress,
-        )
-        .await;
+        let (r1, r2, r3, r4, r5) =
+            futures::future::join5(svc, headless_svc, zk_svc, zk_headless_svc, ingress).await;
         r1.and(r2).and(r3).and(r4).and(r5)?;
 
         Ok(())
