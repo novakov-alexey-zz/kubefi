@@ -86,7 +86,7 @@ fn with_schema(schema: JSONSchemaProps, crd: CustomResourceDefinition) -> Custom
     CustomResourceDefinition {
         spec: CustomResourceDefinitionSpec {
             validation: Some(CustomResourceValidation {
-                open_api_v3_schema: Some(schema.clone()),
+                open_api_v3_schema: Some(schema),
             }),
             ..crd.spec
         },

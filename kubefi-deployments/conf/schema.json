@@ -33,7 +33,7 @@
     "status": {
       "type": "object",
       "properties": {
-        "error": {
+        "error_msg": {
           "type": "string"
         },
         "last_action": {

@@ -1,6 +1,7 @@
 extern crate dotenv;
 extern crate env_logger;
 extern crate kube_derive;
+extern crate kube_runtime;
 extern crate kubefi_deployments;
 #[macro_use]
 extern crate log;
@@ -11,12 +12,11 @@ use std::path::Path;
 use anyhow::{Error, Result};
 use dotenv::dotenv;
 use futures::{StreamExt, TryStreamExt};
-use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
+use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1beta1::CustomResourceDefinition;
 use kube::api::Meta;
-use kube::api::WatchEvent;
-use kube::api::{Api, PostParams};
-use kube::runtime::Informer;
+use kube::api::{Api, ListParams, PostParams};
 use kube::Client;
+use kube_runtime::watcher::Event;
 use tokio::time::{delay_for, Duration};
 
 use kubefi_deployments::controller::{NiFiController, ReplaceStatus};
@@ -34,20 +34,21 @@ async fn main() -> Result<()> {
     // Manage CRDs first
     let crds: Api<CustomResourceDefinition> = Api::all(client.clone());
 
-    // delete_old_version(crds.clone()).await?;
-    // delay_for(Duration::from_secs(2)).await;
-    //
-    // let schema = fs::read_to_string("conf/schema.json")?;
-    // create_new_version(crds, schema).await?;
-    // delay_for(Duration::from_secs(1)).await;
+    delete_old_version(crds.clone()).await?;
+    delay_for(Duration::from_secs(2)).await;
+
+    let schema = fs::read_to_string("conf/schema.json")?;
+    create_new_version(crds, schema).await?;
+    delay_for(Duration::from_secs(1)).await;
 
     let namespace = read_namespace();
     let api: Api<NiFiDeployment> = get_api(&namespace, client.clone());
 
-    let informer = Informer::new(api.clone());
+    let mut watcher = kube_runtime::watcher(api.clone(), ListParams::default()).boxed();
     let config = read_config()?;
     debug!("Loaded config {}", config);
-    let controller = NiFiController::new(namespace, client, config, Path::new("./templates"))?;
+    let controller =
+        NiFiController::new(namespace, client.clone(), config, Path::new("./templates"))?;
 
     info!(
         "Starting Kubefi event loop for {:?}",
@@ -57,13 +58,15 @@ async fn main() -> Result<()> {
             .unwrap()
     );
 
-    let mut stream = informer.poll().await?.boxed();
-    while let Some(event) = stream.try_next().await? {
+    while let Some(event) = watcher.try_next().await? {
         let status = handle_event(&controller, event.clone()).await?;
-        // match status {
-        //     Some(s) => replace_status(&api, s).await,
-        //     None => Ok(()),
-        // }?;
+        match status {
+            Some(s) => {
+                let api: Api<NiFiDeployment> = Api::namespaced(client.clone(), s.ns.as_str());
+                replace_status(&api, s).await
+            }
+            None => Ok(()),
+        }?;
     }
 
     Err(Error::msg(
@@ -72,21 +75,18 @@ async fn main() -> Result<()> {
 }
 
 async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<()> {
+    debug!("patching status: {:?}", &s);
     let mut resource = api.get_status(&s.name).await?;
-    resource.status = Some(s.status);
+    resource.status = Some(s.clone().status);
     let pp = PostParams::default();
     let data = serde_json::to_vec(&resource)?;
-    match api
-        .replace_status(s.name.as_str(), &pp, data)
-        .await
-        .map(|_| ())
-    {
+    match api.replace_status(&s.name, &pp, data).await {
         Ok(_) => {
-            info!("Status updated");
+            info!("Status updated: {:?}", s.status);
             Ok(())
         }
         Err(e) => {
-            error!("Update status failed {:?}", e);
+            error!("Update status failed {}", e);
             Ok(())
         }
     }
@@ -94,37 +94,22 @@ async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<(
 
 async fn handle_event(
     controller: &NiFiController,
-    event: WatchEvent<NiFiDeployment>,
+    event: Event<NiFiDeployment>,
 ) -> Result<Option<ReplaceStatus>> {
     match event {
-        WatchEvent::Added(o) => {
+        Event::Applied(o) => {
             let spec = o.spec.clone();
-            info!("adding deployment: {} (spec={:?})", Meta::name(&o), spec);
+            info!("applied deployment: {} (spec={:?})", Meta::name(&o), spec);
             controller.on_add(o).await
         }
-        WatchEvent::Modified(o) => {
-            let status = o.status.clone().unwrap();
-            info!(
-                "modifying Deployment: {} (status={:?})",
-                Meta::name(&o),
-                status
-            );
-            controller.on_modify(o).await
+        Event::Restarted(o) => {
+            let length = o.len();
+            info!("Got Restarted event with length: {}", length);
+            Ok(None)
         }
-        WatchEvent::Deleted(o) => {
+        Event::Deleted(o) => {
             info!("deleting Deployment: {}", Meta::name(&o));
             controller.on_delete(o).await.map(|_| None)
-        }
-        WatchEvent::Error(e) => {
-            error!("Error event: {:?}", e);
-            Ok(None)
-        }
-        WatchEvent::Bookmark(o) => {
-            warn!(
-                "Got bookmark {:?}. It is not supported yet by this operator!",
-                o
-            );
-            Ok(None)
         }
     }
 }

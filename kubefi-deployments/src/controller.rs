@@ -3,19 +3,17 @@ extern crate kube;
 extern crate kube_derive;
 extern crate serde;
 
-use std::{error, fmt};
 use std::fmt::Debug;
 use std::path::Path;
+use std::{error, fmt};
 
 use anyhow::Error;
-use either::Either::{Left, Right};
-use futures::Future;
 use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::core::v1::{ConfigMap, Service};
 use k8s_openapi::api::extensions::v1beta1::Ingress;
 use k8s_openapi::Resource;
-use kube::{Api, Client};
 use kube::api::{DeleteParams, ListParams, Meta, PostParams};
+use kube::{Api, Client};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
@@ -23,8 +21,8 @@ use serde_json::Value;
 use crate::anyhow::Result;
 use crate::controller::ControllerError::MissingProperty;
 use crate::crd::{NiFiDeployment, NiFiDeploymentStatus};
-use crate::Namespace;
 use crate::template::Template;
+use crate::Namespace;
 
 #[derive(Debug)]
 pub enum ControllerError {
@@ -32,8 +30,10 @@ pub enum ControllerError {
     MissingTemplateParameter(String),
 }
 
+#[derive(Serialize, Debug, Clone)]
 pub struct ReplaceStatus {
     pub name: String,
+    pub ns: String,
     pub status: NiFiDeploymentStatus,
 }
 
@@ -89,47 +89,40 @@ impl NiFiController {
             .metadata
             .name
             .ok_or_else(|| MissingProperty("name".to_string(), d.kind.clone()))?;
+        let ns = NiFiController::read_namespace(&d)?;
         let error = self
-            .handle_event(d, &name)
+            .handle_event(d, &name, &ns)
             .await
             .err()
             .map(|e| e.to_string())
             .unwrap_or_default();
-        let status = NiFiDeploymentStatus { error, last_action };
-        Ok(Some(ReplaceStatus { name, status }))
+        let status = NiFiDeploymentStatus {
+            error_msg: error,
+            last_action,
+        };
+        Ok(Some(ReplaceStatus { name, ns, status }))
     }
 
     pub async fn on_modify(&self, d: NiFiDeployment) -> Result<Option<ReplaceStatus>> {
         self.handle_action(d, "modify".to_string()).await
     }
 
-    pub async fn on_delete(&self, d: NiFiDeployment) -> Result<(), anyhow::Error> {
+    pub async fn on_delete(&self, d: NiFiDeployment) -> Result<()> {
         let ns = NiFiController::read_namespace(&d)?;
-        let cr_name = NiFiController::read_name(&d)?;
         let params = &DeleteParams::default();
-
-        let sts = self.get_api::<StatefulSet>(&ns);
-        let nifi_set = sts.delete(&cr_name, params);
-        let zk_set_name = NiFiController::zk_set_name(&cr_name);
-        let zk_set = sts.delete(zk_set_name.as_str(), params);
-
-        let (r1, r2) = futures::future::join(nifi_set, zk_set).await;
-        r1.and(r2).map_err(Error::from)?;
-
         let lp = ListParams::default().labels("app.kubernetes.io/managed-by=Kubefi,release=nifi");
 
+        let sts = self.delete_resources::<StatefulSet>(&ns, &params, &lp);
         let svc = self.delete_resources::<Service>(&ns, &params, &lp);
         let cm = self.delete_resources::<ConfigMap>(&ns, &params, &lp);
         let ing = self.delete_resources::<Ingress>(&ns, &params, &lp);
-        let (r1, r2, r3) = futures::future::join3(svc, cm, ing).await;
-        r1.and(r2).and(r3)?;
-
-        Ok(())
+        let (r1, r2, r3, r4) = futures::future::join4(sts, svc, cm, ing).await;
+        r1.and(r2).and(r3).and(r4)
     }
 
     async fn delete_resources<T: Resource + Clone + DeserializeOwned + Meta + Debug>(
         &self,
-        ns: &String,
+        ns: &str,
         params: &DeleteParams,
         lp: &ListParams,
     ) -> Result<()> {
@@ -145,7 +138,7 @@ impl NiFiController {
                     e.map_left(|resource| debug!("Deleted {:?}", resource))
                         .map_right(|status| debug!("Deleting {:?}", status))
                 })
-                    .map(|_| ())
+                .map(|_| ())
             })
             .fold(Ok(()), |acc, r| acc.and(r.map_err(Error::from)))
     }
@@ -157,10 +150,7 @@ impl NiFiController {
     ) -> Result<Vec<String>> {
         let api: Api<T> = self.get_api(&ns);
         let list = &api.list(&lp).await?;
-        let names = list
-            .into_iter()
-            .map(|s| Meta::name(s))
-            .collect::<Vec<String>>();
+        let names = list.into_iter().map(Meta::name).collect::<Vec<String>>();
         Ok(names)
     }
 
@@ -168,9 +158,7 @@ impl NiFiController {
         Api::namespaced(self.client.clone(), &ns)
     }
 
-    async fn handle_event(&self, d: NiFiDeployment, name: &str) -> Result<()> {
-        let ns = NiFiController::read_namespace(&d)?;
-
+    async fn handle_event(&self, d: NiFiDeployment, name: &str, ns: &str) -> Result<()> {
         let zk_cm_name = format!("{}-zookeeper", &name);
         let zk_cm = self.create_from_yaml::<ConfigMap, _>(&zk_cm_name, &name, &ns, |name| {
             self.template.zk_configmap(name)
@@ -238,7 +226,7 @@ impl NiFiController {
             zk_headless_service,
             ingress,
         )
-            .await;
+        .await;
         r1.and(r2).and(r3).and(r4).and(r5)?;
 
         Ok(())
@@ -255,13 +243,6 @@ impl NiFiController {
             .ok_or_else(|| Error::from(MissingProperty("namespace".to_string(), d.kind.clone())))
     }
 
-    fn read_name(d: &NiFiDeployment) -> Result<String> {
-        d.clone()
-            .metadata
-            .name
-            .ok_or_else(|| Error::from(MissingProperty("name".to_string(), d.kind.clone())))
-    }
-
     async fn create_from_yaml<
         T: Resource + Serialize + Clone + DeserializeOwned + Meta,
         F: FnOnce(&str) -> Result<Option<String>>,
@@ -272,7 +253,7 @@ impl NiFiController {
         ns: &str,
         yaml: F,
     ) -> Result<Option<T>> {
-        let api: Api<T> = self.get_api(&ns);
+        let api = self.get_api::<T>(&ns);
         match api.get(&name).await {
             Err(_) => {
                 let yaml = yaml(&cr_name)?;
