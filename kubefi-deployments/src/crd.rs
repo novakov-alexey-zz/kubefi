@@ -26,6 +26,9 @@ pub const CRD_NAME: &str = "nifideployments.io.github.novakov-alexey";
     printcolumn = r#"{"name":"Replicas", "jsonPath": ".spec.nifi_replicas", "type": "integer"}"#,
     apiextensions = "v1beta1"
 )]
+#[kube(
+    scale = r#"{"specReplicasPath":".spec.nifi_replicas", "statusReplicasPath":".status.nifi_replicas"}"#
+)]
 pub struct NiFiDeploymentSpec {
     pub nifi_replicas: u8,
     pub zk_replicas: u8,
@@ -36,8 +39,8 @@ pub struct NiFiDeploymentSpec {
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 pub struct NiFiDeploymentStatus {
+    pub nifi_replicas: u8,
     pub error_msg: String,
-    pub last_action: String,
 }
 
 pub async fn delete_old_version(crds: Api<CustomResourceDefinition>) -> Result<()> {

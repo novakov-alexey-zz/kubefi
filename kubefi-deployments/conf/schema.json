@@ -33,15 +33,17 @@
     "status": {
       "type": "object",
       "properties": {
-        "error_msg": {
-          "type": "string"
+        "nifi_replicas": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
         },
-        "last_action": {
+        "error_msg": {
           "type": "string"
         }
       },
       "required": [
-        "last_action"
+        "nifi_replicas"
       ]
     }
   }

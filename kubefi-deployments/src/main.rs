@@ -30,6 +30,7 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     let kubefi_cfg = read_kubefi_config()?;
+    debug!(">>>> Loaded Kubefi config {:?}", kubefi_cfg);
     let client = Client::try_default().await?;
 
     let crds: Api<CustomResourceDefinition> = Api::all(client.clone());
@@ -41,10 +42,14 @@ async fn main() -> Result<()> {
     let api = get_api::<NiFiDeployment>(&namespace, client.clone());
 
     let mut watcher = kube_runtime::watcher(api.clone(), ListParams::default()).boxed();
-    let config = read_nifi_config()?;
-    debug!("Loaded config {}", config);
-    let controller =
-        NiFiController::new(namespace, client.clone(), config, Path::new("./templates"))?;
+    let nifi_cfg = read_nifi_config()?;
+    debug!(">>>> Loaded NiFi config {}", nifi_cfg);
+    let controller = NiFiController::new(
+        namespace,
+        client.clone(),
+        nifi_cfg,
+        Path::new("./templates"),
+    )?;
 
     info!(
         "Starting Kubefi event loop for {:?}",
@@ -81,7 +86,7 @@ async fn replace_crd(crds: Api<CustomResourceDefinition>, schema: PathBuf) -> Re
 }
 
 async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<()> {
-    debug!("patching status: {:?}", &s);
+    debug!("replacing status: {:?}", &s);
     let mut resource = api.get_status(&s.name).await?;
     resource.status = Some(s.clone().status);
     let pp = PostParams::default();
@@ -106,7 +111,7 @@ async fn handle_event(
         Event::Applied(o) => {
             let spec = o.spec.clone();
             info!("applied deployment: {} (spec={:?})", Meta::name(&o), spec);
-            controller.on_add(o).await
+            controller.on_apply(o).await
         }
         Event::Restarted(o) => {
             let length = o.len();

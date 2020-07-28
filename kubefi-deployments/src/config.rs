@@ -4,8 +4,9 @@ use anyhow::{Error, Result};
 use hocon::{Hocon, HoconLoader};
 use serde::Deserialize;
 use serde_json::{Number, Value};
+use std::fmt::Debug;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct KubefiConfig {
     pub crd_schema_path: PathBuf,
     pub replace_existing_crd: bool,
