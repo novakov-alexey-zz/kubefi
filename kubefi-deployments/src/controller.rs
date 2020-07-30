@@ -1,4 +1,5 @@
 extern crate anyhow;
+extern crate either;
 extern crate kube;
 extern crate kube_derive;
 extern crate serde;
@@ -8,7 +9,7 @@ use std::path::Path;
 use std::{error, fmt};
 
 use anyhow::Error;
-use k8s_openapi::api::apps::v1::{StatefulSet, StatefulSetSpec};
+use k8s_openapi::api::apps::v1::StatefulSet;
 use k8s_openapi::api::core::v1::{ConfigMap, Service};
 use k8s_openapi::api::extensions::v1beta1::Ingress;
 use k8s_openapi::Resource;
@@ -23,6 +24,9 @@ use crate::controller::ControllerError::MissingProperty;
 use crate::crd::{NiFiDeployment, NiFiDeploymentStatus};
 use crate::template::Template;
 use crate::Namespace;
+
+use self::either::Either;
+use self::either::Either::{Left, Right};
 
 #[derive(Debug)]
 pub enum ControllerError {
@@ -63,6 +67,13 @@ pub struct NiFiController {
     pub namespace: Namespace,
     pub client: Client,
     template: Template,
+}
+
+pub struct SetParams {
+    pub replicas: i32,
+    pub container: String,
+    pub image: Option<String>,
+    pub set_name: String,
 }
 
 impl NiFiController {
@@ -146,76 +157,142 @@ impl NiFiController {
         Api::namespaced(self.client.clone(), &ns)
     }
 
+    fn nifi_template(&self, name: &str, d: &NiFiDeployment) -> Result<Option<String>> {
+        self.template.nifi_statefulset(
+            &name,
+            &d.spec.nifi_replicas,
+            &d.spec.image,
+            &d.spec.storage_class,
+        )
+    }
+
+    fn zk_template(&self, name: &str, d: &NiFiDeployment) -> Result<Option<String>> {
+        self.template.zk_statefulset(
+            &name,
+            &d.spec.zk_replicas,
+            &d.spec.zk_image,
+            &d.spec.storage_class,
+        )
+    }
+
     async fn handle_event(&self, d: NiFiDeployment, name: &str, ns: &str) -> Result<()> {
-        let zk_cm_name = format!("{}-zookeeper", &name);
-        let zk_cm = self.create_from_yaml::<ConfigMap, _>(&zk_cm_name, &name, &ns, |name| {
-            self.template.zk_configmap(name)
-        });
+        self.create_cm(&name, &ns).await?;
 
-        let nifi_cm_name = format!("{}-config", &name);
-        let nifi_cm = self.create_from_yaml::<ConfigMap, _>(&nifi_cm_name, &name, &ns, |name| {
-            self.template.nifi_configmap(name)
-        });
-
-        let (r1, r2) = futures::future::join(zk_cm, nifi_cm).await;
-        r1.and(r2)?;
-
-        let nifi = self.create_from_yaml::<StatefulSet, _>(&name, &name, &ns, |name| {
-            let image_name = &d.spec.image_name;
-            let storage_class = &d.spec.storage_class;
-            self.template.nifi_statefulset(
-                &name,
-                &d.spec.nifi_replicas,
-                &image_name,
-                &storage_class,
-            )
+        let nifi = self.get_or_create::<StatefulSet, _>(&name, &name, &ns, |name| {
+            self.nifi_template(&name, &d)
         });
         let zk_set_name = NiFiController::zk_set_name(&name);
-        let zk = self.create_from_yaml::<StatefulSet, _>(&zk_set_name, &name, &ns, |name| {
-            let image_name = &d.spec.zk_image_name;
-            let storage_class = &d.spec.storage_class;
-            self.template
-                .zk_statefulset(&name, &d.spec.zk_replicas, &image_name, &storage_class)
+        let zk = self.get_or_create::<StatefulSet, _>(&zk_set_name, &name, &ns, |name| {
+            self.zk_template(&name, &d)
         });
         let (r1, r2) = futures::future::join(nifi, zk).await;
-        let nifi = r1?;
-        let zk_set = r2?;
 
-        let expected_replicas = d.spec.nifi_replicas as i32;
-        self.scale_set(nifi, expected_replicas, &ns, &name).await?;
+        if let Left(Some(set)) = r1? {
+            {
+                let params = SetParams {
+                    replicas: d.clone().spec.nifi_replicas as i32,
+                    container: "server".to_string(),
+                    image: d.clone().spec.image,
+                    set_name: name.to_string(),
+                };
+                self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
+                    self.nifi_template(&cr_name, &deployment)
+                })
+                .await
+            }?;
+        }
 
-        let expected_replicas = d.spec.zk_replicas as i32;
-        self.scale_set(zk_set, expected_replicas, &ns, &zk_set_name).await?;
+        if let Left(Some(set)) = r2? {
+            {
+                let params = SetParams {
+                    replicas: d.clone().spec.zk_replicas as i32,
+                    container: "zookeeper".to_string(),
+                    image: d.clone().spec.zk_image,
+                    set_name: zk_set_name,
+                };
+                self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
+                    self.zk_template(&cr_name, &deployment)
+                })
+                .await
+            }?;
+        }
 
-        let svc = self.create_from_yaml::<Service, _>(&name, &name, &ns, |name| {
+        let svc = self.get_or_create::<Service, _>(&name, &name, &ns, |name| {
             self.template.nifi_service(name)
         });
 
         let headless_svc_name = format!("{}-headless", &name);
         let headless_svc =
-            self.create_from_yaml::<Service, _>(&headless_svc_name, &name, &ns, |name| {
+            self.get_or_create::<Service, _>(&headless_svc_name, &name, &ns, |name| {
                 self.template.nifi_headless_service(name)
             });
 
         let zk_svc_name = format!("{}-zookeeper", &name);
-        let zk_svc = self.create_from_yaml::<Service, _>(&zk_svc_name, &name, &ns, |name| {
+        let zk_svc = self.get_or_create::<Service, _>(&zk_svc_name, &name, &ns, |name| {
             self.template.zk_service(name)
         });
 
         let zk_headless_svc_name = format!("{}-zookeeper-headless", &name);
         let zk_headless_svc =
-            self.create_from_yaml::<Service, _>(&zk_headless_svc_name, &name, &ns, |name| {
+            self.get_or_create::<Service, _>(&zk_headless_svc_name, &name, &ns, |name| {
                 self.template.zk_headless_service(name)
             });
 
         let ingress_name = format!("{}-ingress", &name);
-        let ingress = self.create_from_yaml::<Ingress, _>(&ingress_name, &name, &ns, |name| {
+        let ingress = self.get_or_create::<Ingress, _>(&ingress_name, &name, &ns, |name| {
             self.template.ingress(name)
         });
 
         let (r1, r2, r3, r4, r5) =
             futures::future::join5(svc, headless_svc, zk_svc, zk_headless_svc, ingress).await;
         r1.and(r2).and(r3).and(r4).and(r5).map(|_| ())
+    }
+
+    async fn update_existing_set<F: FnOnce(&str, &NiFiDeployment) -> Result<Option<String>>>(
+        &self,
+        d: &NiFiDeployment,
+        cr_name: &str,
+        ns: &str,
+        set: StatefulSet,
+        params: &SetParams,
+        get_yaml: F,
+    ) -> Result<()> {
+        if self.updated(set, &params) {
+            let yaml = get_yaml(&cr_name, &d)?;
+            match yaml {
+                Some(t) => {
+                    let new_set = NiFiController::from_yaml(&t)?;
+                    let api = self.get_api::<StatefulSet>(&ns);
+                    let pp = PostParams::default();
+                    api.replace(&params.set_name, &pp, &new_set)
+                        .await
+                        .map(|_| ())
+                }
+                None => Ok(()),
+            }
+        } else {
+            Ok(())
+        }?;
+        Ok(())
+    }
+
+    async fn create_cm(
+        &self,
+        name: &&str,
+        ns: &&str,
+    ) -> Result<Either<Option<ConfigMap>, Option<ConfigMap>>> {
+        let zk_cm_name = format!("{}-zookeeper", &name);
+        let zk_cm = self.get_or_create::<ConfigMap, _>(&zk_cm_name, &name, &ns, |name| {
+            self.template.zk_configmap(name)
+        });
+
+        let nifi_cm_name = format!("{}-config", &name);
+        let nifi_cm = self.get_or_create::<ConfigMap, _>(&nifi_cm_name, &name, &ns, |name| {
+            self.template.nifi_configmap(name)
+        });
+
+        let (r1, r2) = futures::future::join(zk_cm, nifi_cm).await;
+        r1.and(r2)
     }
 
     fn zk_set_name(name: &str) -> String {
@@ -229,37 +306,37 @@ impl NiFiController {
             .ok_or_else(|| Error::from(MissingProperty("namespace".to_string(), d.kind.clone())))
     }
 
-    async fn scale_set(
-        &self,
-        set: Option<StatefulSet>,
-        expected_replicas: i32,
-        ns: &str,
-        name: &str,
-    ) -> Result<()> {
-        let replicas = set.clone().and_then(|s| s.spec.and_then(|s| s.replicas));
-        match (replicas, set) {
-            (Some(current_replicas), Some(set)) if current_replicas != expected_replicas => {
-                let api = self.get_api::<StatefulSet>(&ns);
-                let updated_set = NiFiController::update_replicas(expected_replicas, set);
-                let pp = PostParams::default();
-                api.replace(&name, &pp, &updated_set).await?;
-                Ok(())
-            }
-            _ => Ok(()),
+    fn updated(&self, set: StatefulSet, params: &SetParams) -> bool {
+        self.image_changed(&set, &params.image.clone(), &params.container)
+            || self.scale_set(set, params.replicas)
+    }
+
+    fn image_changed(&self, set: &StatefulSet, image: &Option<String>, container: &str) -> bool {
+        match image {
+            Some(target_image) => set
+                .clone()
+                .spec
+                .and_then(|s| {
+                    s.template.spec.and_then(|spec| {
+                        spec.containers.into_iter().find(|c| {
+                            c.name == container && c.image.iter().any(|img| img != target_image)
+                        })
+                    })
+                })
+                .is_some(),
+            None => false,
         }
     }
 
-    fn update_replicas(new_replicas: i32, set: StatefulSet) -> StatefulSet {
-        StatefulSet {
-            spec: set.spec.map(|spec| StatefulSetSpec {
-                replicas: Some(new_replicas),
-                ..spec
-            }),
-            ..set
+    fn scale_set(&self, set: StatefulSet, expected_replicas: i32) -> bool {
+        let replicas = set.spec.and_then(|s| s.replicas);
+        match replicas {
+            Some(current_replicas) if current_replicas != expected_replicas => true,
+            _ => false,
         }
     }
 
-    async fn create_from_yaml<
+    async fn get_or_create<
         T: Resource + Serialize + Clone + DeserializeOwned + Meta,
         F: FnOnce(&str) -> Result<Option<String>>,
     >(
@@ -268,7 +345,7 @@ impl NiFiController {
         cr_name: &str,
         ns: &str,
         get_yaml: F,
-    ) -> Result<Option<T>> {
+    ) -> Result<Either<Option<T>, Option<T>>> {
         let api = self.get_api::<T>(&ns);
         match api.get(&name).await {
             Err(_) => {
@@ -276,19 +353,28 @@ impl NiFiController {
                 match yaml {
                     Some(y) => {
                         let resource = NiFiController::from_yaml(&y)?;
-                        self.create_resource(&api, resource).await.map(Some)
+                        self.create_resource(&api, resource)
+                            .await
+                            .map(Some)
+                            .map(Right)
                     }
                     None => {
                         debug!("Resource template {} is not enabled or missing ", &name);
-                        Ok(None)
+                        Ok(Right(None))
                     }
                 }
             }
             Ok(res) => {
-                debug!("Found existing resource {}", &name);
-                Ok(Some(res))
+                debug!("Found existing resource {:?}", &name);
+                Ok(Left(Some(res)))
             }
         }
+    }
+
+    fn from_yaml<T: Resource + Serialize + Clone + DeserializeOwned + Meta>(
+        y: &str,
+    ) -> Result<T, Error> {
+        serde_yaml::from_str(&y).map_err(Error::new)
     }
 
     async fn create_resource<T: Serialize + Clone + DeserializeOwned + Meta>(
@@ -298,9 +384,5 @@ impl NiFiController {
     ) -> Result<T> {
         let pp = PostParams::default();
         api.create(&pp, &resource).await.map_err(Error::new)
-    }
-
-    fn from_yaml<T: Resource + DeserializeOwned>(yaml: &str) -> Result<T, Error> {
-        serde_yaml::from_str(&yaml).map_err(Error::new)
     }
 }

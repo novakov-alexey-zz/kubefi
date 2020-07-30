@@ -32,8 +32,8 @@ pub const CRD_NAME: &str = "nifideployments.io.github.novakov-alexey";
 pub struct NiFiDeploymentSpec {
     pub nifi_replicas: u8,
     pub zk_replicas: u8,
-    pub image_name: Option<String>,
-    pub zk_image_name: Option<String>,
+    pub image: Option<String>,
+    pub zk_image: Option<String>,
     pub storage_class: Option<String>,
 }
 

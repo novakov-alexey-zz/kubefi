@@ -19,10 +19,10 @@
           "format": "uint8",
           "minimum": 0.0
         },
-        "image_name": {
+        "image": {
           "type": "string"
         },
-        "zk_image_name": {
+        "zk_image": {
           "type": "string"
         },
         "storage_class": {

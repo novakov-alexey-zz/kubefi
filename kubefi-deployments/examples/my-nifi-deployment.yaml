@@ -3,6 +3,6 @@ kind: NiFiDeployment
 metadata:
   name: my-nifi
 spec:
-  image_name: apache/nifi:1.11.4
+  image: apache/nifi:1.11.4
   nifi_replicas: 3
   zk_replicas: 3
