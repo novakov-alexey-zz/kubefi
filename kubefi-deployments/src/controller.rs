@@ -69,6 +69,7 @@ pub struct NiFiController {
     template: Template,
 }
 
+#[derive(Debug)]
 pub struct SetParams {
     pub replicas: i32,
     pub container: String,
@@ -176,47 +177,12 @@ impl NiFiController {
     }
 
     async fn handle_event(&self, d: NiFiDeployment, name: &str, ns: &str) -> Result<()> {
-        self.create_cm(&name, &ns).await?;
+        self.handle_configmaps(&name, &ns).await?;
+        self.handle_sets(&d, &name, &ns).await?;
+        self.handle_services(&name, &ns).await
+    }
 
-        let nifi = self.get_or_create::<StatefulSet, _>(&name, &name, &ns, |name| {
-            self.nifi_template(&name, &d)
-        });
-        let zk_set_name = NiFiController::zk_set_name(&name);
-        let zk = self.get_or_create::<StatefulSet, _>(&zk_set_name, &name, &ns, |name| {
-            self.zk_template(&name, &d)
-        });
-        let (r1, r2) = futures::future::join(nifi, zk).await;
-
-        if let Left(Some(set)) = r1? {
-            {
-                let params = SetParams {
-                    replicas: d.clone().spec.nifi_replicas as i32,
-                    container: "server".to_string(),
-                    image: d.clone().spec.image,
-                    set_name: name.to_string(),
-                };
-                self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
-                    self.nifi_template(&cr_name, &deployment)
-                })
-                .await
-            }?;
-        }
-
-        if let Left(Some(set)) = r2? {
-            {
-                let params = SetParams {
-                    replicas: d.clone().spec.zk_replicas as i32,
-                    container: "zookeeper".to_string(),
-                    image: d.clone().spec.zk_image,
-                    set_name: zk_set_name,
-                };
-                self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
-                    self.zk_template(&cr_name, &deployment)
-                })
-                .await
-            }?;
-        }
-
+    async fn handle_services(&self, name: &&str, ns: &&str) -> Result<(), Error> {
         let svc = self.get_or_create::<Service, _>(&name, &name, &ns, |name| {
             self.template.nifi_service(name)
         });
@@ -248,6 +214,50 @@ impl NiFiController {
         r1.and(r2).and(r3).and(r4).and(r5).map(|_| ())
     }
 
+    async fn handle_sets(&self, d: &NiFiDeployment, name: &str, ns: &str) -> Result<()> {
+        let nifi = self.get_or_create::<StatefulSet, _>(&name, &name, &ns, |name| {
+            self.nifi_template(&name, &d)
+        });
+        let zk_set_name = NiFiController::zk_set_name(&name);
+        let zk = self.get_or_create::<StatefulSet, _>(&zk_set_name, &name, &ns, |name| {
+            self.zk_template(&name, &d)
+        });
+        let (r1, r2) = futures::future::join(nifi, zk).await;
+
+        if let Left(Some(set)) = r1? {
+            {
+                let params = SetParams {
+                    replicas: d.clone().spec.nifi_replicas as i32,
+                    container: "server".to_string(),
+                    image: d.clone().spec.image,
+                    set_name: name.to_string(),
+                };
+                debug!("Updating existing NiFi statefulset with: {:?}", &params);
+                self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
+                    self.nifi_template(&cr_name, &deployment)
+                })
+                .await
+            }?;
+        }
+
+        if let Left(Some(set)) = r2? {
+            {
+                let params = SetParams {
+                    replicas: d.clone().spec.zk_replicas as i32,
+                    container: "zookeeper".to_string(),
+                    image: d.clone().spec.zk_image,
+                    set_name: zk_set_name,
+                };
+                debug!("Updating existing ZooKeeper statefulset with: {:?}", &params);
+                self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
+                    self.zk_template(&cr_name, &deployment)
+                })
+                .await
+            }?;
+        }
+        Ok(())
+    }
+
     async fn update_existing_set<F: FnOnce(&str, &NiFiDeployment) -> Result<Option<String>>>(
         &self,
         d: &NiFiDeployment,
@@ -276,7 +286,7 @@ impl NiFiController {
         Ok(())
     }
 
-    async fn create_cm(
+    async fn handle_configmaps(
         &self,
         name: &&str,
         ns: &&str,

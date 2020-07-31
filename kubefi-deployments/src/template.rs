@@ -40,7 +40,10 @@ impl Template {
         image_name: &Option<String>,
         storage_class: &Option<String>,
     ) -> Result<Option<String>> {
-        self.statefulset(name, replicas, image_name, storage_class, NIFI_STATEFULSET)
+        let image = json!({
+            "image" : image_name
+        });
+        self.statefulset(name, replicas, image, storage_class, NIFI_STATEFULSET)
     }
 
     pub fn zk_statefulset(
@@ -50,7 +53,10 @@ impl Template {
         image_name: &Option<String>,
         storage_class: &Option<String>,
     ) -> Result<Option<String>> {
-        self.statefulset(name, replicas, image_name, storage_class, ZK_STATEFULSET)
+        let image = json!({
+            "zkImage" : image_name
+        });
+        self.statefulset(name, replicas, image, storage_class, ZK_STATEFULSET)
     }
 
     pub fn nifi_service(&self, name: &str) -> Result<Option<String>> {
@@ -82,9 +88,10 @@ impl Template {
     }
 
     fn get_config(&self, name: &str) -> Value {
-        let mut data = json!({ "name": name });
-        Template::merge_json(&mut data, self.config.clone());
-        data
+        let mut current_cfg = self.config.clone();
+        let data = json!({ "name": name });
+        Template::merge_json(&mut current_cfg, data);
+        current_cfg
     }
 
     pub fn nifi_configmap(&self, name: &str) -> Result<Option<String>> {
@@ -112,19 +119,20 @@ impl Template {
         &self,
         name: &str,
         replicas: &u8,
-        image_name: &Option<String>,
+        image: Value,
         storage_class: &Option<String>,
         template: &str,
     ) -> Result<Option<String>> {
         let mut data = json!({
             "name": name,
-            "image" : image_name,
             "replicas": &replicas.to_string(),
             "storage_class": storage_class
         });
-        Template::merge_json(&mut data, self.config.clone());
-        debug!("statefulset template params\n: {}", &data);
-        self.render(&data, template)
+        Template::merge_json(&mut data, image);
+        let mut current_cfg = self.config.clone();
+        Template::merge_json(&mut current_cfg, data);
+        debug!("{} template params\n: {}", &template, &current_cfg);
+        self.render(&current_cfg, template)
     }
 
     fn merge_json(a: &mut Value, b: Value) {
