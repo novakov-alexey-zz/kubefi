@@ -61,13 +61,10 @@ async fn main() -> Result<()> {
 
     while let Some(event) = watcher.try_next().await? {
         let status = handle_event(&controller, event.clone()).await?;
-        match status {
-            Some(s) => {
-                let api: Api<NiFiDeployment> = Api::namespaced(client.clone(), s.ns.as_str());
-                replace_status(&api, s).await
-            }
-            None => Ok(()),
-        }?;
+        for s in status {
+            let api: Api<NiFiDeployment> = Api::namespaced(client.clone(), s.ns.as_str());
+            replace_status(&api, s).await?
+        }
     }
 
     Err(Error::msg(
@@ -106,21 +103,40 @@ async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<(
 async fn handle_event(
     controller: &NiFiController,
     event: Event<NiFiDeployment>,
-) -> Result<Option<ReplaceStatus>> {
+) -> Result<Vec<ReplaceStatus>> {
     match event {
-        Event::Applied(o) => {
-            let spec = o.spec.clone();
-            info!("applied deployment: {} (spec={:?})", Meta::name(&o), spec);
-            controller.on_apply(o).await
+        Event::Applied(event) => {
+            let spec = event.spec.clone();
+            info!(
+                "applied deployment: {} (spec={:?})",
+                Meta::name(&event),
+                spec
+            );
+            controller
+                .on_apply(event)
+                .await
+                .map(|status| status.into_iter().collect())
         }
-        Event::Restarted(o) => {
-            let length = o.len();
+        Event::Restarted(events) => {
+            let length = events.len();
             info!("Got Restarted event with length: {}", length);
-            Ok(None)
+            let applies = events.into_iter().map(|e| controller.on_apply(e));
+            futures::future::join_all(applies)
+                .await
+                .into_iter()
+                .fold(Ok(Vec::new()), |acc, res| {
+                    acc.and_then(|mut all_res: Vec<ReplaceStatus>| {
+                        res.map(|r| {
+                            let mut l = r.into_iter().collect::<Vec<_>>();
+                            all_res.append(&mut l);
+                            all_res
+                        })
+                    })
+                })
         }
-        Event::Deleted(o) => {
-            info!("deleting Deployment: {}", Meta::name(&o));
-            controller.on_delete(o).await.map(|_| None)
+        Event::Deleted(event) => {
+            info!("deleting Deployment: {}", Meta::name(&event));
+            controller.on_delete(event).await.map(|_| Vec::new())
         }
     }
 }

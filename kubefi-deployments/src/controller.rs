@@ -10,7 +10,7 @@ use std::{error, fmt};
 
 use anyhow::Error;
 use k8s_openapi::api::apps::v1::StatefulSet;
-use k8s_openapi::api::core::v1::{ConfigMap, Service};
+use k8s_openapi::api::core::v1::{ConfigMap, Pod, Service};
 use k8s_openapi::api::extensions::v1beta1::Ingress;
 use k8s_openapi::Resource;
 use kube::api::{DeleteParams, ListParams, Meta, PostParams};
@@ -28,10 +28,11 @@ use crate::Namespace;
 use self::either::Either;
 use self::either::Either::{Left, Right};
 
+const KUBEFI_LABELS: &str = "app.kubernetes.io/managed-by=Kubefi,release=nifi";
+
 #[derive(Debug)]
 pub enum ControllerError {
     MissingProperty(String, String),
-    MissingTemplateParameter(String),
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -44,12 +45,11 @@ pub struct ReplaceStatus {
 impl fmt::Display for ControllerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ControllerError::MissingProperty(property, kind) =>
-                write!(f, "Property {:?} for {} resource is missing", property, kind),
-            ControllerError::MissingTemplateParameter(parameter) =>
-                write!(f,
-                       "Template parameter {:?} is not specified in the resource nor in Kubefi-deployment controller config",
-                       parameter)
+            ControllerError::MissingProperty(property, kind) => write!(
+                f,
+                "Property {:?} for {} resource is missing",
+                property, kind
+            ),
         }
     }
 }
@@ -58,7 +58,6 @@ impl error::Error for ControllerError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
             ControllerError::MissingProperty(_, _) => None,
-            ControllerError::MissingTemplateParameter(_) => None,
         }
     }
 }
@@ -75,6 +74,8 @@ pub struct SetParams {
     pub container: String,
     pub image: Option<String>,
     pub set_name: String,
+    pub delete_pods: bool,
+    pub app_label: String,
 }
 
 impl NiFiController {
@@ -110,7 +111,7 @@ impl NiFiController {
     pub async fn on_delete(&self, d: NiFiDeployment) -> Result<()> {
         let ns = NiFiController::read_namespace(&d)?;
         let params = &DeleteParams::default();
-        let lp = ListParams::default().labels("app.kubernetes.io/managed-by=Kubefi,release=nifi");
+        let lp = ListParams::default().labels(KUBEFI_LABELS);
 
         let sts = self.delete_resources::<StatefulSet>(&ns, &params, &lp);
         let svc = self.delete_resources::<Service>(&ns, &params, &lp);
@@ -126,16 +127,16 @@ impl NiFiController {
         params: &DeleteParams,
         lp: &ListParams,
     ) -> Result<()> {
-        let api = self.get_api::<T>(&ns);
         let names = self.find_names::<T>(&ns, &lp).await?;
         debug!("Resources to delete: {:?}", &names);
+        let api = self.get_api::<T>(&ns);
         let deletes = names.iter().map(|name| api.delete(&name, &params));
         futures::future::join_all(deletes)
             .await
             .into_iter()
             .map(|r| {
                 r.map(|e| {
-                    e.map_left(|resource| debug!("Deleted {:?}", resource))
+                    e.map_left(|resource| debug!("Deleted {}", Meta::name(&resource)))
                         .map_right(|status| debug!("Deleting {:?}", status))
                 })
                 .map(|_| ())
@@ -150,7 +151,7 @@ impl NiFiController {
     ) -> Result<Vec<String>> {
         let api: Api<T> = self.get_api(&ns);
         let list = &api.list(&lp).await?;
-        let names = list.into_iter().map(Meta::name).collect::<Vec<String>>();
+        let names = list.into_iter().map(Meta::name).collect();
         Ok(names)
     }
 
@@ -225,35 +226,33 @@ impl NiFiController {
         let (r1, r2) = futures::future::join(nifi, zk).await;
 
         if let Left(Some(set)) = r1? {
-            {
-                let params = SetParams {
-                    replicas: d.clone().spec.nifi_replicas as i32,
-                    container: "server".to_string(),
-                    image: d.clone().spec.image,
-                    set_name: name.to_string(),
-                };
-                debug!("Updating existing NiFi statefulset with: {:?}", &params);
-                self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
-                    self.nifi_template(&cr_name, &deployment)
-                })
-                .await
-            }?;
+            let params = SetParams {
+                replicas: d.clone().spec.nifi_replicas as i32,
+                container: "server".to_string(),
+                image: d.clone().spec.image,
+                set_name: name.to_string(),
+                delete_pods: false,
+                app_label: "nifi".to_string(),
+            };
+            self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
+                self.nifi_template(&cr_name, &deployment)
+            })
+            .await?
         }
 
         if let Left(Some(set)) = r2? {
-            {
-                let params = SetParams {
-                    replicas: d.clone().spec.zk_replicas as i32,
-                    container: "zookeeper".to_string(),
-                    image: d.clone().spec.zk_image,
-                    set_name: zk_set_name,
-                };
-                debug!("Updating existing ZooKeeper statefulset with: {:?}", &params);
-                self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
-                    self.zk_template(&cr_name, &deployment)
-                })
-                .await
-            }?;
+            let params = SetParams {
+                replicas: d.clone().spec.zk_replicas as i32,
+                container: "zookeeper".to_string(),
+                image: d.clone().spec.zk_image,
+                set_name: zk_set_name,
+                delete_pods: true,
+                app_label: "zookeeper".to_string(),
+            };
+            self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
+                self.zk_template(&cr_name, &deployment)
+            })
+            .await?
         }
         Ok(())
     }
@@ -264,32 +263,44 @@ impl NiFiController {
         cr_name: &str,
         ns: &str,
         set: StatefulSet,
-        params: &SetParams,
+        set_params: &SetParams,
         get_yaml: F,
     ) -> Result<()> {
-        if self.updated(set, &params) {
+        let (image_changed, replicas_changed) = self.updated(set, &set_params);
+
+        if image_changed || replicas_changed {
+            debug!(
+                "Updating existing {} statefulset with: {:?}",
+                &set_params.set_name, &set_params
+            );
             let yaml = get_yaml(&cr_name, &d)?;
             match yaml {
                 Some(t) => {
                     let new_set = NiFiController::from_yaml(&t)?;
                     let api = self.get_api::<StatefulSet>(&ns);
                     let pp = PostParams::default();
-                    api.replace(&params.set_name, &pp, &new_set)
+                    api.replace(&set_params.set_name, &pp, &new_set)
                         .await
                         .map(|_| ())
+                        .map_err(Error::from)
                 }
                 None => Ok(()),
-            }
-        } else {
-            Ok(())
-        }?;
+            }?;
+        }
+        if image_changed && set_params.delete_pods {
+            let params = &DeleteParams::default();
+            let lp = ListParams::default().labels(
+                format!("app={},heritage=Kubefi,release=nifi", set_params.app_label).as_str(),
+            );
+            self.delete_resources::<Pod>(&ns, &params, &lp).await?;
+        }
         Ok(())
     }
 
     async fn handle_configmaps(
         &self,
-        name: &&str,
-        ns: &&str,
+        name: &str,
+        ns: &str,
     ) -> Result<Either<Option<ConfigMap>, Option<ConfigMap>>> {
         let zk_cm_name = format!("{}-zookeeper", &name);
         let zk_cm = self.get_or_create::<ConfigMap, _>(&zk_cm_name, &name, &ns, |name| {
@@ -316,9 +327,11 @@ impl NiFiController {
             .ok_or_else(|| Error::from(MissingProperty("namespace".to_string(), d.kind.clone())))
     }
 
-    fn updated(&self, set: StatefulSet, params: &SetParams) -> bool {
-        self.image_changed(&set, &params.image.clone(), &params.container)
-            || self.scale_set(set, params.replicas)
+    fn updated(&self, set: StatefulSet, params: &SetParams) -> (bool, bool) {
+        (
+            self.image_changed(&set, &params.image.clone(), &params.container),
+            self.scale_set(set, params.replicas),
+        )
     }
 
     fn image_changed(&self, set: &StatefulSet, image: &Option<String>, container: &str) -> bool {

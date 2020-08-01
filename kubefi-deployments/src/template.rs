@@ -40,9 +40,7 @@ impl Template {
         image_name: &Option<String>,
         storage_class: &Option<String>,
     ) -> Result<Option<String>> {
-        let image = json!({
-            "image" : image_name
-        });
+        let image = json!({ "image": image_name });
         self.statefulset(name, replicas, image, storage_class, NIFI_STATEFULSET)
     }
 
@@ -53,9 +51,7 @@ impl Template {
         image_name: &Option<String>,
         storage_class: &Option<String>,
     ) -> Result<Option<String>> {
-        let image = json!({
-            "zkImage" : image_name
-        });
+        let image = json!({ "zkImage": image_name });
         self.statefulset(name, replicas, image, storage_class, ZK_STATEFULSET)
     }
 

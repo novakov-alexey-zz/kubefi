@@ -21,6 +21,7 @@ spec:
       labels:
         app: zookeeper
         release: nifi
+        heritage: Kubefi
     spec:
       containers:
       - command:
