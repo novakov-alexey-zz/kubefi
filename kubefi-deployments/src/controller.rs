@@ -23,7 +23,7 @@ use crate::anyhow::Result;
 use crate::controller::ControllerError::MissingProperty;
 use crate::crd::{NiFiDeployment, NiFiDeploymentStatus};
 use crate::template::Template;
-use crate::Namespace;
+use crate::{read_type, Namespace};
 
 use self::either::Either;
 use self::either::Either::{Left, Right};
@@ -69,7 +69,7 @@ pub struct NiFiController {
 }
 
 #[derive(Debug)]
-pub struct SetParams {
+struct SetParams {
     pub replicas: i32,
     pub container: String,
     pub image: Option<String>,
@@ -128,7 +128,7 @@ impl NiFiController {
         lp: &ListParams,
     ) -> Result<()> {
         let names = self.find_names::<T>(&ns, &lp).await?;
-        debug!("Resources to delete: {:?}", &names);
+        debug!("{} to delete: {:?}", read_type::<T>("Resources"), &names);
         let api = self.get_api::<T>(&ns);
         let deletes = names.iter().map(|name| api.delete(&name, &params));
         futures::future::join_all(deletes)
@@ -289,9 +289,8 @@ impl NiFiController {
         }
         if image_changed && set_params.delete_pods {
             let params = &DeleteParams::default();
-            let lp = ListParams::default().labels(
-                format!("app={},heritage=Kubefi,release=nifi", set_params.app_label).as_str(),
-            );
+            let lp = ListParams::default()
+                .labels(format!("app={},{}", set_params.app_label, KUBEFI_LABELS).as_str());
             self.delete_resources::<Pod>(&ns, &params, &lp).await?;
         }
         Ok(())
@@ -388,7 +387,7 @@ impl NiFiController {
                 }
             }
             Ok(res) => {
-                debug!("Found existing resource {:?}", &name);
+                debug!("Found existing {}: {}", read_type::<T>("resource"), &name);
                 Ok(Left(Some(res)))
             }
         }

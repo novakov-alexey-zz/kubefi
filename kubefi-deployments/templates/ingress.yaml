@@ -8,7 +8,6 @@ metadata:
     app: nifi
     release: nifi
     app.kubernetes.io/managed-by: Kubefi
-    heritage: Kubefi
   name: {{ name }}-ingress
 spec:
   rules:

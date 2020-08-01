@@ -5,7 +5,6 @@ metadata:
     app: zookeeper
     release: nifi
     app.kubernetes.io/managed-by: Kubefi
-    heritage: Kubefi    
   name: {{ name }}-zookeeper
 spec:
   podManagementPolicy: OrderedReady
@@ -21,7 +20,7 @@ spec:
       labels:
         app: zookeeper
         release: nifi
-        heritage: Kubefi
+        app.kubernetes.io/managed-by: Kubefi
     spec:
       containers:
       - command:

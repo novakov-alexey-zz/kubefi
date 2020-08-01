@@ -39,3 +39,10 @@ pub fn get_api<T: Resource>(ns: &Namespace, client: Client) -> Api<T> {
         SingleNamespace(name) => Api::namespaced(client, &name),
     }
 }
+
+pub fn read_type<T>(default: &'static str) -> &'static str {
+    std::any::type_name::<T>()
+        .split("::")
+        .last()
+        .unwrap_or_else(|| default)
+}

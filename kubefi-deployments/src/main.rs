@@ -22,7 +22,7 @@ use tokio::time::{delay_for, Duration};
 use kubefi_deployments::config::{read_kubefi_config, read_nifi_config};
 use kubefi_deployments::controller::{NiFiController, ReplaceStatus};
 use kubefi_deployments::crd::{create_new_version, delete_old_version, NiFiDeployment};
-use kubefi_deployments::{get_api, read_namespace};
+use kubefi_deployments::{get_api, read_namespace, read_type};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -53,10 +53,7 @@ async fn main() -> Result<()> {
 
     info!(
         "Starting Kubefi event loop for {:?}",
-        std::any::type_name::<NiFiDeployment>()
-            .split("::")
-            .last()
-            .unwrap()
+        read_type::<NiFiDeployment>("NiFi")
     );
 
     while let Some(event) = watcher.try_next().await? {
@@ -88,16 +85,16 @@ async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<(
     resource.status = Some(s.clone().status);
     let pp = PostParams::default();
     let data = serde_json::to_vec(&resource)?;
-    match api.replace_status(&s.name, &pp, data).await {
-        Ok(_) => {
+    api.replace_status(&s.name, &pp, data)
+        .await
+        .map(|_| {
             info!("Status updated: {:?}", s.status);
             Ok(())
-        }
-        Err(e) => {
+        })
+        .unwrap_or_else(|e| {
             error!("Update status failed {}", e);
             Ok(())
-        }
-    }
+        })
 }
 
 async fn handle_event(

@@ -4,8 +4,7 @@ metadata:
   labels:
     app: nifi
     release: nifi
-    app.kubernetes.io/managed-by: Kubefi    
-    heritage: Kubefi    
+    app.kubernetes.io/managed-by: Kubefi
   name: {{ name }}-config
 data:
 {{ get_files "configs" 4}}

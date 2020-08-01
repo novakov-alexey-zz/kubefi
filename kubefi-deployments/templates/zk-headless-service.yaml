@@ -4,7 +4,6 @@ metadata:
   labels:
     app: zookeeper
     app.kubernetes.io/managed-by: Kubefi
-    heritage: Kubefi
     release: nifi
   name: {{ name }}-zookeeper-headless
 spec:
