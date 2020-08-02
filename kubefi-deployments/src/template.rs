@@ -25,7 +25,7 @@ const ZK_CONFIGMAP: &str = "zk-configmap";
 const TEMPLATE_FILE_EXTENSION: &str = ".yaml";
 
 impl Template {
-    pub fn new(path: &Path, config: Value) -> Result<Self> {
+    pub fn new(path: &Path, config: Value) -> Result<Template> {
         let mut handlebars = Handlebars::new();
         handlebars.register_templates_directory(TEMPLATE_FILE_EXTENSION, path)?;
         handlebars.register_helper("get_files", Box::new(get_files_helper));

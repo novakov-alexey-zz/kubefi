@@ -8,6 +8,7 @@ extern crate log;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use anyhow::{Error, Result};
 use dotenv::dotenv;
@@ -22,7 +23,8 @@ use tokio::time::{delay_for, Duration};
 use kubefi_deployments::config::{read_kubefi_config, read_nifi_config};
 use kubefi_deployments::controller::{NiFiController, ReplaceStatus};
 use kubefi_deployments::crd::{create_new_version, delete_old_version, NiFiDeployment};
-use kubefi_deployments::{get_api, read_namespace, read_type};
+use kubefi_deployments::template::Template;
+use kubefi_deployments::{get_api, read_namespace, read_type, Namespace};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -43,12 +45,12 @@ async fn main() -> Result<()> {
 
     let mut watcher = kube_runtime::watcher(api.clone(), ListParams::default()).boxed();
     let nifi_cfg = read_nifi_config()?;
-    debug!(">>>> Loaded NiFi config {}", nifi_cfg);
+    debug!(">>>> Loaded NiFi config {}", &nifi_cfg);
+
     let controller = NiFiController::new(
         namespace,
-        client.clone(),
-        nifi_cfg,
-        Path::new("./templates"),
+        Rc::new(client.clone()),
+        Rc::new(Template::new(Path::new("./templates"), nifi_cfg)?),
     )?;
 
     info!(
@@ -59,7 +61,10 @@ async fn main() -> Result<()> {
     while let Some(event) = watcher.try_next().await? {
         let status = handle_event(&controller, event.clone()).await?;
         for s in status {
-            let api: Api<NiFiDeployment> = Api::namespaced(client.clone(), s.ns.as_str());
+            let api = get_api::<NiFiDeployment>(
+                &Namespace::SingleNamespace(s.ns.as_str().to_string()),
+                client.clone(),
+            );
             replace_status(&api, s).await?
         }
     }

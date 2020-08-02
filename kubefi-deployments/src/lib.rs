@@ -18,7 +18,7 @@ pub mod config;
 pub mod controller;
 pub mod crd;
 mod handelbars_ext;
-mod template;
+pub mod template;
 
 pub enum Namespace {
     All,
