@@ -18,13 +18,15 @@ deploy-configs:
       -n $(OPERATOR_NAMESPACE)
 
 deploy-kubefi: deploy-configs
-	sed  -e "s:{{NAMESPACE}}:$(OPERATOR_NAMESPACE):g" manifests/rbac.yaml | kubectl create -n $(OPERATOR_NAMESPACE) -f -
-	sed  -e "s:{{INGRESS_HOST}}:$(INGRESS_HOST):g" manifests/kubefi-deployments-operator.yaml | kubectl create -n $(OPERATOR_NAMESPACE) -f -
+	sed -e "s:{{NAMESPACE}}:$(OPERATOR_NAMESPACE):g" manifests/rbac.yaml | kubectl create -n $(OPERATOR_NAMESPACE) -f -
+	sed -e "s:{{INGRESS_HOST}}:$(INGRESS_HOST):g" -e "s:{{KUBEFI_VERSION}}:$(KUBEFI_VER):g" \
+		manifests/kubefi-deployments-operator.yaml | kubectl create -n $(OPERATOR_NAMESPACE) -f -
+
 undeploy-kubefi:
 	kubectl delete cm kubefi-configs -n $(OPERATOR_NAMESPACE)
-	sed  -e "s:{{NAMESPACE}}:$(OPERATOR_NAMESPACE):g" manifests/rbac.yaml | kubectl delete -n $(OPERATOR_NAMESPACE) -f -
-	echo $(INGRESS_HOST)
-	sed  -e "s:{{INGRESS_HOST}}:$(INGRESS_HOST):g" manifests/kubefi-deployments-operator.yaml | kubectl delete -n $(OPERATOR_NAMESPACE) -f -
+	sed -e "s:{{NAMESPACE}}:$(OPERATOR_NAMESPACE):g" manifests/rbac.yaml | kubectl delete -n $(OPERATOR_NAMESPACE) -f -
+	sed -e "s:{{INGRESS_HOST}}:$(INGRESS_HOST):g" -e "s:{{KUBEFI_VERSION}}:$(KUBEFI_VER):g" \
+		manifests/kubefi-deployments-operator.yaml | kubectl delete -n $(OPERATOR_NAMESPACE) -f -
 
 build-image:
 	sh build-image.sh $(KUBEFI_VER)

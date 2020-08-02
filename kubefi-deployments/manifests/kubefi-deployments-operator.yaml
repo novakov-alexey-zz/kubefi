@@ -15,7 +15,7 @@ spec:
       serviceAccountName: kubefi-deployments-operator
       containers:
         - name: kubefi-deployments-operator
-          image: alexeyn/kubefi-deployments-operator:0.1.0
+          image: alexeyn/kubefi-deployments-operator:{{KUBEFI_VERSION}}
           imagePullPolicy: Always
           volumeMounts:
             - mountPath: /conf
