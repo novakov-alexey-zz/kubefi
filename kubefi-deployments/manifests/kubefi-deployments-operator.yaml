@@ -25,6 +25,8 @@ spec:
               value: "kubefi_deployments=debug,kube=debug"
             - name: NAMESPACE
               value: "all"
+            - name: INGRESS_HOST
+              value: {{INGRESS_HOST}}
       volumes:
         - configMap:
             defaultMode: 0777

@@ -1,3 +1,10 @@
+.ONESHELL:
+.SHELL := /bin/bash
+
+DEV_ENV=make.dev.env
+include $(DEV_ENV)
+export
+
 OPERATOR_NAMESPACE=test
 PATH_TO_CONFIGS=conf/
 KUBEFI_VER=0.1.0
@@ -12,11 +19,12 @@ deploy-configs:
 
 deploy-kubefi: deploy-configs
 	sed  -e "s:{{NAMESPACE}}:$(OPERATOR_NAMESPACE):g" manifests/rbac.yaml | kubectl create -n $(OPERATOR_NAMESPACE) -f -
-	kubectl create -f manifests/kubefi-deployments-operator.yaml -n $(OPERATOR_NAMESPACE)
+	sed  -e "s:{{INGRESS_HOST}}:$(INGRESS_HOST):g" manifests/kubefi-deployments-operator.yaml | kubectl create -n $(OPERATOR_NAMESPACE) -f -
 undeploy-kubefi:
 	kubectl delete cm kubefi-configs -n $(OPERATOR_NAMESPACE)
 	sed  -e "s:{{NAMESPACE}}:$(OPERATOR_NAMESPACE):g" manifests/rbac.yaml | kubectl delete -n $(OPERATOR_NAMESPACE) -f -
-	kubectl delete -f manifests/kubefi-deployments-operator.yaml -n $(OPERATOR_NAMESPACE)
+	echo $(INGRESS_HOST)
+	sed  -e "s:{{INGRESS_HOST}}:$(INGRESS_HOST):g" manifests/kubefi-deployments-operator.yaml | kubectl delete -n $(OPERATOR_NAMESPACE) -f -
 
 build-image:
 	sh build-image.sh $(KUBEFI_VER)
