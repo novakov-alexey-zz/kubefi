@@ -1,0 +1,41 @@
+# in order to create following resources, you must log in as system admin
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubefi-deployments-operator
+  namespace: {{NAMESPACE}}
+  labels:
+    app: kubefi-deployments-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubefi-deployments-operator
+  labels:
+    app: kubefi-deployments-operator
+subjects:
+  - kind: ServiceAccount
+    name: kubefi-deployments-operator
+    namespace: {{NAMESPACE}}
+roleRef:
+  kind: ClusterRole
+  name: kubefi-deployments-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubefi-deployments-operator
+rules:
+  - apiGroups: ["", "authorization.k8s.io", "extensions", "apps"]
+    resources: ["pods", "services", "configmaps", "secrets", "statefulsets", "ingresses"]
+    verbs: ["get", "watch", "list", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "watch", "list"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "watch", "list", "create", "delete"]
+  - apiGroups: ["io.github.novakov-alexey"]
+    resources: ["nifideployments", "nifideployments/status"]
+    verbs: ["watch", "list", "update", "get"]

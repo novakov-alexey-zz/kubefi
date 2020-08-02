@@ -13,7 +13,7 @@ pub struct ConfigMapController {
     pub template: Rc<Template>,
 }
 
-impl<'a> ConfigMapController {
+impl ConfigMapController {
     pub async fn handle_configmaps(
         &self,
         name: &str,

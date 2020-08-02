@@ -193,7 +193,7 @@ async fn get_or_create<
                     create_resource(&api, resource).await.map(Some).map(Right)
                 }
                 None => {
-                    debug!("Resource template {} is not enabled or missing ", &name);
+                    debug!("Resource template {:?} is not enabled or missing ", &name);
                     Ok(Right(None))
                 }
             }

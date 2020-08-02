@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubefi-deployments-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      deployment: kubefi-deployments-operator
+  template:
+    metadata:
+      labels:
+        deployment: kubefi-deployments-operator
+    spec:
+      serviceAccountName: kubefi-deployments-operator
+      containers:
+        - name: kubefi-deployments-operator
+          image: alexeyn/kubefi-deployments-operator:0.1.0
+          imagePullPolicy: Always
+          volumeMounts:
+            - mountPath: /conf
+              name: kubefi-configs
+          env:
+            - name: RUST_LOG
+              value: "kubefi_deployments=debug,kube=debug"
+            - name: NAMESPACE
+              value: "all"
+      volumes:
+        - configMap:
+            defaultMode: 0777
+            name: kubefi-configs
+          name: kubefi-configs
