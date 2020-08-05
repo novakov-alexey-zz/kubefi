@@ -31,7 +31,15 @@ async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::init();
     let version = env!("CARGO_PKG_VERSION");
-    info!(">>>>>>>> Kubefi version: {}", version);
+    let banner = r#"
+     _  __     _           __ _
+    | |/ /    | |         / _(_)
+    | ' /_   _| |__   ___| |_ _
+    |  <| | | | '_ \ / _ \  _| |
+    | . \ |_| | |_) |  __/ | | |
+    |_|\_\__,_|_.__/ \___|_| |_|
+    "#;
+    println!("{}\nversion: {}\n", banner, version);
 
     let kubefi_cfg = read_kubefi_config()?;
     debug!(">>>> Loaded Kubefi config {:?}", kubefi_cfg);
