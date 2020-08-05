@@ -121,13 +121,18 @@ impl Template {
     ) -> Result<Option<String>> {
         let mut data = json!({
             "name": name,
-            "replicas": &replicas.to_string(),
-            "storageClass": storage_class
+            "replicas": &replicas.to_string()
         });
         Template::merge_json(&mut data, image);
+
+        if let Some(sc) = storage_class {
+            let sc_json = json!({ "storageClass": sc });
+            Template::merge_json(&mut data, sc_json);
+        }
+
         let mut current_cfg = self.config.clone();
         Template::merge_json(&mut current_cfg, data);
-        debug!("{} template params\n: {}", &template, &current_cfg);
+        debug!("{} template params:\n{}", &template, &current_cfg);
         self.render(&current_cfg, template)
     }
 
