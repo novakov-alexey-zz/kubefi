@@ -30,6 +30,8 @@ use kubefi_deployments::{get_api, read_namespace, read_type, Namespace};
 async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::init();
+    let version = env!("CARGO_PKG_VERSION");
+    info!(">>>>>>>> Kubefi version: {}", version);
 
     let kubefi_cfg = read_kubefi_config()?;
     debug!(">>>> Loaded Kubefi config {:?}", kubefi_cfg);

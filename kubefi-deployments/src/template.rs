@@ -122,7 +122,7 @@ impl Template {
         let mut data = json!({
             "name": name,
             "replicas": &replicas.to_string(),
-            "storage_class": storage_class
+            "storageClass": storage_class
         });
         Template::merge_json(&mut data, image);
         let mut current_cfg = self.config.clone();
