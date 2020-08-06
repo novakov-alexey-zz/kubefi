@@ -4,6 +4,7 @@ use anyhow::{Error, Result};
 use handlebars::Handlebars;
 use serde_json::Value;
 
+use crate::crd::AuthLdap;
 use crate::handelbars_ext::get_files_helper;
 
 pub struct Template {
@@ -73,13 +74,13 @@ impl Template {
 
     fn service(&self, name: &str, template: &str) -> Result<Option<String>> {
         let data = self.get_config(name);
-        debug!("service template {} params\n: {}", &template, &data);
+        debug!("service template {} params\n:{}", &template, &data);
         self.render(&data, template)
     }
 
     pub fn ingress(&self, name: &str) -> Result<Option<String>> {
         let data = self.get_config(name);
-        debug!("ingress template params\n: {}", &data);
+        debug!("ingress template params\n:{}", &data);
         self.render(&data, INGRESS)
     }
 
@@ -90,17 +91,37 @@ impl Template {
         current_cfg
     }
 
-    pub fn nifi_configmap(&self, name: &str) -> Result<Option<String>> {
-        self.configmap(name, NIFI_CONFIGMAP)
+    pub fn nifi_configmap(&self, name: &str, ldap: &Option<AuthLdap>) -> Result<Option<String>> {
+        let maybe_ldap = &ldap.as_ref().map(|al| {
+            json!(
+            {
+            "auth": {
+            "ldap": {
+                "host": al.host,
+                "enabled": true
+            }}
+            }
+            )
+        });
+        self.configmap(name, maybe_ldap, NIFI_CONFIGMAP)
     }
 
     pub fn zk_configmap(&self, name: &str) -> Result<Option<String>> {
-        self.configmap(name, ZK_CONFIGMAP)
+        self.configmap(name, &None, ZK_CONFIGMAP)
     }
 
-    fn configmap(&self, name: &str, template: &str) -> Result<Option<String>> {
-        let data = self.get_config(name);
-        debug!("{} template params\n: {}", template, &data);
+    fn configmap(
+        &self,
+        name: &str,
+        maybe_cfg: &Option<Value>,
+        template: &str,
+    ) -> Result<Option<String>> {
+        let mut data = self.get_config(name);
+        if let Some(cfg) = maybe_cfg {
+            Template::merge_json(&mut data, cfg.clone());
+        }
+
+        debug!("{} template params\n:{}", template, &data);
         self.render(&data, template)
     }
 
@@ -115,7 +136,7 @@ impl Template {
         &self,
         name: &str,
         replicas: &u8,
-        image: Value,
+        set_properties: Value,
         storage_class: &Option<String>,
         template: &str,
     ) -> Result<Option<String>> {
@@ -123,7 +144,7 @@ impl Template {
             "name": name,
             "replicas": &replicas.to_string()
         });
-        Template::merge_json(&mut data, image);
+        Template::merge_json(&mut data, set_properties);
 
         if let Some(sc) = storage_class {
             let sc_json = json!({ "storageClass": sc });

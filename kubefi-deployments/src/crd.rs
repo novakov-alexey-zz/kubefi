@@ -35,6 +35,12 @@ pub struct NiFiDeploymentSpec {
     pub image: Option<String>,
     pub zk_image: Option<String>,
     pub storage_class: Option<String>,
+    pub ldap: Option<AuthLdap>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
+pub struct AuthLdap {
+    pub host: String,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]

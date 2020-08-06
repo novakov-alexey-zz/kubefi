@@ -5,6 +5,7 @@ extern crate kube_derive;
 extern crate serde;
 
 use std::fmt::Debug;
+use std::rc::Rc;
 use std::{error, fmt};
 
 use anyhow::Error;
@@ -28,13 +29,14 @@ use crate::{read_type, Namespace};
 
 use self::either::Either;
 use self::either::Either::{Left, Right};
-use std::rc::Rc;
 
 mod configmap;
 mod service;
 mod statefulset;
 
 const KUBEFI_LABELS: &str = "app.kubernetes.io/managed-by=Kubefi,release=nifi";
+const NIFI_APP_LABEL: &str = "nifi";
+const ZK_APP_LABEL: &str = "zookeeper";
 
 #[derive(Debug)]
 pub enum ControllerError {
@@ -160,8 +162,10 @@ impl NiFiController {
     }
 
     async fn handle_event(&self, d: NiFiDeployment, name: &str, ns: &str) -> Result<()> {
-        self.cm_controller.handle_configmaps(&name, &ns).await?;
-        self.sets_controller.handle_sets(&d, &name, &ns).await?;
+        let nifi_cm_updated = self.cm_controller.handle_configmaps(&d, &name, &ns).await?;
+        self.sets_controller
+            .handle_sets(&d, &name, &ns, nifi_cm_updated)
+            .await?;
         self.svc_controller.handle_services(&name, &ns).await
     }
 
@@ -185,22 +189,37 @@ async fn get_or_create<
 ) -> Result<Either<Option<T>, Option<T>>> {
     let api = get_api::<T>(&client.clone(), &ns);
     match api.get(&name).await {
-        Err(_) => {
-            let yaml = get_yaml(&cr_name)?;
-            match yaml {
-                Some(y) => {
-                    let resource = from_yaml(&y)?;
-                    create_resource(&api, resource).await.map(Some).map(Right)
-                }
-                None => {
-                    debug!("Resource template {:?} is not enabled or missing ", &name);
-                    Ok(Right(None))
-                }
-            }
-        }
+        Err(_) => create_from_yaml(&cr_name, &ns, &client, get_yaml).await,
         Ok(res) => {
             debug!("Found existing {}: {}", read_type::<T>("resource"), &name);
             Ok(Left(Some(res)))
+        }
+    }
+}
+
+async fn create_from_yaml<
+    T: Resource + Serialize + Clone + DeserializeOwned + Meta,
+    F: FnOnce(&str) -> Result<Option<String>>,
+>(
+    cr_name: &str,
+    ns: &str,
+    client: &Client,
+    get_yaml: F,
+) -> Result<Either<Option<T>, Option<T>>, Error> {
+    let yaml = get_yaml(&cr_name)?;
+    match yaml {
+        Some(y) => {
+            let resource = from_yaml(&y)?;
+            let api = get_api::<T>(&client.clone(), &ns);
+            create_resource(&api, resource).await.map(Some).map(Right)
+        }
+        None => {
+            debug!(
+                "{} template for {} is not enabled or missing ",
+                read_type::<T>("resource"),
+                cr_name
+            );
+            Ok(Right(None))
         }
     }
 }

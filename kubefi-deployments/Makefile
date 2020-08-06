@@ -5,10 +5,15 @@ DEV_ENV=make.dev.env
 include $(DEV_ENV)
 export
 
+args = `arg="$(filter-out $@,$(MAKECMDGOALS))" && echo $${arg:-${1}}`
+
 OPERATOR_NAMESPACE=test
 PATH_TO_CONFIGS=conf/
-KUBEFI_VER=0.1.0
+KUBEFI_VER=./read-version.sh
 IMAGE_REGISTRY=alexeyn
+
+show-version:
+	cargo pkgid
 
 deploy-configs:
 	kubectl create configmap kubefi-configs \

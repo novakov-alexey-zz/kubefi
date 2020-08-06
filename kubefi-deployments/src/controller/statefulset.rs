@@ -6,7 +6,10 @@ use k8s_openapi::api::core::v1::Pod;
 use kube::api::{DeleteParams, ListParams, PostParams};
 use kube::Client;
 
-use crate::controller::{delete_resources, from_yaml, get_api, get_or_create, KUBEFI_LABELS};
+use crate::controller::{
+    delete_resources, from_yaml, get_api, get_or_create, KUBEFI_LABELS, NIFI_APP_LABEL,
+    ZK_APP_LABEL,
+};
 use crate::crd::NiFiDeployment;
 use crate::template::Template;
 
@@ -25,6 +28,7 @@ struct SetParams {
     pub set_name: String,
     pub app_label: String,
     pub storage_class: Option<String>,
+    pub cm_updated: bool,
 }
 
 impl StatefulSetController {
@@ -66,10 +70,11 @@ impl StatefulSetController {
                 }?;
             }
 
-            if image_changed {
+            if image_changed || set_params.cm_updated {
                 let params = &DeleteParams::default();
-                let lp = ListParams::default()
-                    .labels(format!("app={},{}", set_params.app_label, KUBEFI_LABELS).as_str());
+                let labels = format!("app={},{}", set_params.app_label, KUBEFI_LABELS);
+                let lp = ListParams::default().labels(&labels);
+                debug!("Removing all Pod(s) with: {:?}", labels);
                 delete_resources::<Pod>(&self.client, &ns, &params, &lp).await?;
             }
         }
@@ -115,20 +120,13 @@ impl StatefulSetController {
                 .spec
                 .and_then(|s| {
                     s.volume_claim_templates.map(|vc| {
-                        vc.iter()
-                            .find(|pvc| {
-                                pvc.spec
-                                    .clone()
-                                    .into_iter()
-                                    .find(|spec| {
-                                        spec.clone()
-                                            .storage_class_name
-                                            .map(|scn| &scn != sc)
-                                            .unwrap_or(false)
-                                    })
-                                    .is_some()
+                        vc.iter().any(|pvc| {
+                            pvc.spec.clone().into_iter().any(|spec| {
+                                spec.storage_class_name
+                                    .map(|scn| &scn != sc)
+                                    .unwrap_or(false)
                             })
-                            .is_some()
+                        })
                     })
                 })
                 .unwrap_or(false),
@@ -158,7 +156,13 @@ impl StatefulSetController {
         format!("{}-zookeeper", &name)
     }
 
-    pub async fn handle_sets(&self, d: &NiFiDeployment, name: &str, ns: &str) -> Result<()> {
+    pub async fn handle_sets(
+        &self,
+        d: &NiFiDeployment,
+        name: &str,
+        ns: &str,
+        nifi_cm_updated: bool,
+    ) -> Result<()> {
         let nifi = get_or_create::<StatefulSet, _>(&self.client, &name, &name, &ns, |name| {
             self.nifi_template(&name, &d)
         });
@@ -168,33 +172,45 @@ impl StatefulSetController {
         });
         let (r1, r2) = futures::future::join(nifi, zk).await;
 
-        if let Left(Some(set)) = r1? {
+        if let Left(Some(existing_set)) = r1? {
             let params = SetParams {
                 replicas: d.clone().spec.nifi_replicas as i32,
                 container: "server".to_string(),
                 image: d.clone().spec.image,
                 set_name: name.to_string(),
-                app_label: "nifi".to_string(),
+                app_label: NIFI_APP_LABEL.to_string(),
                 storage_class: d.clone().spec.storage_class,
+                cm_updated: nifi_cm_updated,
             };
-            self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
-                self.nifi_template(&cr_name, &deployment)
-            })
+            self.update_existing_set(
+                &d,
+                &name,
+                &ns,
+                existing_set,
+                &params,
+                |cr_name, deployment| self.nifi_template(&cr_name, &deployment),
+            )
             .await?
         }
 
-        if let Left(Some(set)) = r2? {
+        if let Left(Some(existing_set)) = r2? {
             let params = SetParams {
                 replicas: d.clone().spec.zk_replicas as i32,
                 container: "zookeeper".to_string(),
                 image: d.clone().spec.zk_image,
                 set_name: zk_set_name,
-                app_label: "zookeeper".to_string(),
+                app_label: ZK_APP_LABEL.to_string(),
                 storage_class: d.clone().spec.storage_class,
+                cm_updated: false,
             };
-            self.update_existing_set(&d, &name, &ns, set, &params, |cr_name, deployment| {
-                self.zk_template(&cr_name, &deployment)
-            })
+            self.update_existing_set(
+                &d,
+                &name,
+                &ns,
+                existing_set,
+                &params,
+                |cr_name, deployment| self.zk_template(&cr_name, &deployment),
+            )
             .await?
         }
         Ok(())
