@@ -23,11 +23,11 @@ pub const CRD_NAME: &str = "nifideployments.io.github.novakov-alexey";
     namespaced,
     shortname = "nidp",
     status = "NiFiDeploymentStatus",
-    printcolumn = r#"{"name":"Replicas", "jsonPath": ".spec.nifi_replicas", "type": "integer"}"#,
+    printcolumn = r#"{"name":"Replicas", "jsonPath": ".spec.nifiReplicas", "type": "integer"}"#,
     apiextensions = "v1beta1"
 )]
 #[kube(
-    scale = r#"{"specReplicasPath":".spec.nifi_replicas", "statusReplicasPath":".status.nifi_replicas"}"#
+    scale = r#"{"specReplicasPath":".spec.nifiReplicas", "statusReplicasPath":".status.nifiReplicas"}"#
 )]
 #[serde(rename_all = "camelCase")]
 pub struct NiFiDeploymentSpec {

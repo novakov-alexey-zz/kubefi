@@ -42,8 +42,9 @@
         <class>org.apache.nifi.authorization.FileUserGroupProvider</class>
         <property name="Users File">./conf/users.xml</property>
         <property name="Legacy Authorized Users File"></property>
-        <property name="Initial User Identity 0">CN=nifi-nifi-0.nifi-nifi-headless.dil.svc.cluster.local, OU=NIFI</property>
-        <property name="Initial User Identity 1">CN=nifi-nifi-1.nifi-nifi-headless.dil.svc.cluster.local, OU=NIFI</property>
+        {{#each nifiReplicas as |i| ~}}
+        <property name="Initial User Identity {{ i }}">CN={{ ../name }}-{{i}}.{{../name}}-headless.{{../ns}}.svc.cluster.local, OU=NIFI</property>
+        {{/each~}}
         <property name="Initial User Identity admin">CN=admin, OU=NIFI</property>
     </userGroupProvider>
     <!--
@@ -214,7 +215,7 @@
         <property name="Initial Admin Identity">CN=admin, OU=NIFI</property>
         <property name="Legacy Authorized Users File"></property>
         {{#each nifiReplicas as |i| ~}}
-        <property name="Initial User Identity {{ i }}">CN={{ ../name }}-{{i}}.{{../name}}-headless.{{../ns}}.svc.cluster.local, OU=NIFI</property>
+        <property name="Node Identity {{ i }}">CN={{ ../name }}-{{i}}.{{../name}}-headless.{{../ns}}.svc.cluster.local, OU=NIFI</property>
         {{/each~}}
     </accessPolicyProvider>
         <!--
