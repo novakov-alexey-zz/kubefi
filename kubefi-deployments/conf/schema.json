@@ -5,16 +5,16 @@
       "title": "NiFiDeployment",
       "type": "object",
       "required": [
-        "nifi_replicas",
-        "zk_replicas"
+        "nifiReplicas",
+        "zkReplicas"
       ],
       "properties": {
-        "nifi_replicas": {
+        "nifiReplicas": {
           "type": "integer",
           "format": "uint8",
           "minimum": 0.0
         },
-        "zk_replicas": {
+        "zkReplicas": {
           "type": "integer",
           "format": "uint8",
           "minimum": 0.0
@@ -43,7 +43,7 @@
         }
       },
       "required": [
-        "nifi_replicas"
+        "nifiReplicas"
       ]
     }
   }

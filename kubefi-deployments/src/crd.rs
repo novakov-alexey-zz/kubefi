@@ -29,6 +29,7 @@ pub const CRD_NAME: &str = "nifideployments.io.github.novakov-alexey";
 #[kube(
     scale = r#"{"specReplicasPath":".spec.nifi_replicas", "statusReplicasPath":".status.nifi_replicas"}"#
 )]
+#[serde(rename_all = "camelCase")]
 pub struct NiFiDeploymentSpec {
     pub nifi_replicas: u8,
     pub zk_replicas: u8,
@@ -36,6 +37,7 @@ pub struct NiFiDeploymentSpec {
     pub zk_image: Option<String>,
     pub storage_class: Option<String>,
     pub ldap: Option<AuthLdap>,
+    pub logging_config_map: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
@@ -44,6 +46,7 @@ pub struct AuthLdap {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct NiFiDeploymentStatus {
     pub nifi_replicas: u8,
     pub error_msg: String,

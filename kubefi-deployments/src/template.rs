@@ -91,7 +91,25 @@ impl Template {
         current_cfg
     }
 
-    pub fn nifi_configmap(&self, name: &str, ldap: &Option<AuthLdap>) -> Result<Option<String>> {
+    pub fn nifi_configmap(
+        &self,
+        name: &str,
+        ns: &str,
+        replicas: &u8,
+        ldap: &Option<AuthLdap>,
+    ) -> Result<Option<String>> {
+        let mut data = self.get_config(name);
+
+        let replica_indices = if &replicas > &&0 {
+            (0..*replicas).collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
+        Template::merge_json(
+            &mut data,
+            json!({ "ns": ns, "nifiReplicas": replica_indices}),
+        );
+
         let maybe_ldap = &ldap.as_ref().map(|al| {
             json!(
             {
@@ -103,25 +121,20 @@ impl Template {
             }
             )
         });
-        self.configmap(name, maybe_ldap, NIFI_CONFIGMAP)
-    }
-
-    pub fn zk_configmap(&self, name: &str) -> Result<Option<String>> {
-        self.configmap(name, &None, ZK_CONFIGMAP)
-    }
-
-    fn configmap(
-        &self,
-        name: &str,
-        maybe_cfg: &Option<Value>,
-        template: &str,
-    ) -> Result<Option<String>> {
-        let mut data = self.get_config(name);
-        if let Some(cfg) = maybe_cfg {
+        if let Some(cfg) = maybe_ldap {
             Template::merge_json(&mut data, cfg.clone());
         }
 
-        debug!("{} template params\n:{}", template, &data);
+        self.configmap(NIFI_CONFIGMAP, &data)
+    }
+
+    pub fn zk_configmap(&self, name: &str) -> Result<Option<String>> {
+        let data = self.get_config(name);
+        self.configmap(ZK_CONFIGMAP, &data)
+    }
+
+    fn configmap(&self, template: &str, data: &Value) -> Result<Option<String>> {
+        println!("{} template params\n:{}", template, &data);
         self.render(&data, template)
     }
 

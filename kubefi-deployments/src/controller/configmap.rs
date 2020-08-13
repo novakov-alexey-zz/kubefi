@@ -6,7 +6,7 @@ use kube::api::DeleteParams;
 use kube::Client;
 
 use crate::controller::{create_from_yaml, from_yaml, get_api, get_or_create};
-use crate::crd::{AuthLdap, NiFiDeployment};
+use crate::crd::NiFiDeployment;
 use crate::template::Template;
 
 use super::either::Either::{Left, Right};
@@ -31,7 +31,8 @@ impl ConfigMapController {
         let nifi_cm_name = format!("{}-config", &name);
         let nifi_cm =
             get_or_create::<ConfigMap, _>(&self.client, &nifi_cm_name, &name, &ns, |name| {
-                self.template.nifi_configmap(name, &d.spec.ldap)
+                self.template
+                    .nifi_configmap(name, &ns, &d.spec.nifi_replicas, &d.spec.ldap)
             });
 
         let (r1, r2) = futures::future::join(zk_cm, nifi_cm).await;
@@ -39,7 +40,10 @@ impl ConfigMapController {
 
         match nifi_cm {
             Left(maybe_cm) => match maybe_cm {
-                Some(cm) => self.handle_update(&d, &name, &ns, &nifi_cm_name, cm).await,
+                Some(existing_cm) => {
+                    self.handle_update(&d, &name, &ns, &nifi_cm_name, existing_cm)
+                        .await
+                }
                 None => Ok(false),
             },
             Right(_) => Ok(false),
@@ -55,13 +59,15 @@ impl ConfigMapController {
         current: ConfigMap,
     ) -> Result<bool> {
         let ldap = &d.spec.ldap;
-        let maybe_yaml = self.template.nifi_configmap(&cm_name, ldap)?;
+        let maybe_yaml =
+            self.template
+                .nifi_configmap(&cm_name, &ns, &d.spec.nifi_replicas, ldap)?;
         match maybe_yaml {
             Some(yaml) => {
                 let expected_cm = from_yaml::<ConfigMap>(&yaml)?;
                 let expected_data = expected_cm.data;
                 if current.data != expected_data {
-                    self.recreate_cm(&name, &ns, &cm_name, ldap)
+                    self.recreate_cm(&name, &ns, &cm_name, &d)
                         .await
                         .map(|_| true)
                 } else {
@@ -77,7 +83,7 @@ impl ConfigMapController {
         name: &str,
         ns: &str,
         nifi_cm_name: &str,
-        ldap: &Option<AuthLdap>,
+        d: &NiFiDeployment,
     ) -> Result<()> {
         let params = &DeleteParams::default();
         let api = get_api::<ConfigMap>(&self.client, &ns);
@@ -85,7 +91,8 @@ impl ConfigMapController {
 
         debug!("Creating new ConfigMap: {}", &nifi_cm_name);
         create_from_yaml::<ConfigMap, _>(&name, &ns, &self.client, |name| {
-            self.template.nifi_configmap(name, &ldap)
+            self.template
+                .nifi_configmap(name, &ns, &d.spec.nifi_replicas, &d.spec.ldap)
         })
         .await
         .map(|_| ())

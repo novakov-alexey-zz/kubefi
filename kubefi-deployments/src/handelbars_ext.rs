@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Error};
 use std::path::Path;
 use std::{fs, io};
 
@@ -37,16 +37,7 @@ pub fn get_files_helper(
                     let file = BufReader::new(&f);
                     let content = file
                         .lines()
-                        .map(|l| {
-                            format!(
-                                "{}{}\n",
-                                format_args!("{: >1$}", "", indent_param),
-                                l.unwrap_or_else(|_| panic!(
-                                    "Failed to read a line from file: {:?}",
-                                    f
-                                ))
-                            )
-                        })
+                        .map(|l| format_line(indent_param, &f, l))
                         .collect::<String>();
                     let file_name = &p.file_name().and_then(|n| n.to_str()).unwrap_or_else(|| {
                         panic!("Failed to read file name: {:?}", &p.file_name())
@@ -69,6 +60,14 @@ pub fn get_files_helper(
     }
 }
 
+fn format_line(indent_param: usize, f: &File, l: Result<String, Error>) -> String {
+    format!(
+        "{}{}\n",
+        format_args!("{: >1$}", "", indent_param),
+        l.unwrap_or_else(|_| panic!("Failed to read a line from file: {:?}", &f))
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -82,7 +81,7 @@ mod tests {
             .expect("Failed to create template engine");
         let name = "test".to_string();
         let content = template
-            .nifi_configmap(&name)
+            .nifi_configmap(&name, "test", &(3 as u8), &None)
             .expect("Failed to render configmap template");
         println!("content:\n{}", content.unwrap())
     }
