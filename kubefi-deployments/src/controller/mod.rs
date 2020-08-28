@@ -78,6 +78,12 @@ pub struct NiFiController {
     sets_controller: StatefulSetController,
 }
 
+#[derive(Clone, Debug)]
+pub struct ConfigMapState {
+    pub updated: bool,
+    pub logging_cm: Option<String>,
+}
+
 impl NiFiController {
     pub fn new(
         ns: Namespace,
@@ -106,11 +112,7 @@ impl NiFiController {
     }
 
     pub async fn on_apply(&self, d: NiFiDeployment) -> Result<Option<ReplaceStatus>> {
-        let name = d
-            .clone()
-            .metadata
-            .name
-            .ok_or_else(|| MissingProperty("name".to_string(), d.kind.clone()))?;
+        let name = NiFiController::read_name(&d)?;
         let ns = NiFiController::read_namespace(&d)?;
         let error = self
             .handle_event(d.clone(), &name, &ns)
@@ -123,6 +125,13 @@ impl NiFiController {
             error_msg: error,
         };
         Ok(Some(ReplaceStatus { name, ns, status }))
+    }
+
+    fn read_name(d: &NiFiDeployment) -> Result<String, Error> {
+        d.clone()
+            .metadata
+            .name
+            .ok_or_else(|| Error::from(MissingProperty("name".to_string(), d.kind.clone())))
     }
 
     pub async fn on_delete(&self, d: NiFiDeployment) -> Result<()> {
@@ -163,8 +172,12 @@ impl NiFiController {
 
     async fn handle_event(&self, d: NiFiDeployment, name: &str, ns: &str) -> Result<()> {
         let nifi_cm_updated = self.cm_controller.handle_configmaps(&d, &name, &ns).await?;
+        let cm_state = ConfigMapState {
+            updated: nifi_cm_updated,
+            logging_cm: d.clone().spec.logging_config_map,
+        };
         self.sets_controller
-            .handle_sets(&d, &name, &ns, nifi_cm_updated)
+            .handle_sets(&d, &name, &ns, cm_state)
             .await?;
         self.svc_controller.handle_services(&name, &ns).await
     }
@@ -187,9 +200,24 @@ async fn get_or_create<
     ns: &str,
     get_yaml: F,
 ) -> Result<Either<Option<T>, Option<T>>> {
+    get_or_create_convert(client, name, cr_name, ns, get_yaml, Ok).await
+}
+
+async fn get_or_create_convert<
+    T: Resource + Serialize + Clone + DeserializeOwned + Meta,
+    F: FnOnce(&str) -> Result<Option<String>>,
+    C: FnOnce(T) -> Result<T>,
+>(
+    client: &Client,
+    name: &str,
+    cr_name: &str,
+    ns: &str,
+    get_yaml: F,
+    convert: C,
+) -> Result<Either<Option<T>, Option<T>>> {
     let api = get_api::<T>(&client.clone(), &ns);
     match api.get(&name).await {
-        Err(_) => create_from_yaml(&cr_name, &ns, &client, get_yaml).await,
+        Err(_) => create_from_yaml(&cr_name, &ns, &client, get_yaml, convert).await,
         Ok(res) => {
             debug!("Found existing {}: {}", read_type::<T>("resource"), &name);
             Ok(Left(Some(res)))
@@ -200,18 +228,21 @@ async fn get_or_create<
 async fn create_from_yaml<
     T: Resource + Serialize + Clone + DeserializeOwned + Meta,
     F: FnOnce(&str) -> Result<Option<String>>,
+    C: FnOnce(T) -> Result<T>,
 >(
     cr_name: &str,
     ns: &str,
     client: &Client,
     get_yaml: F,
+    convert: C,
 ) -> Result<Either<Option<T>, Option<T>>, Error> {
     let yaml = get_yaml(&cr_name)?;
     match yaml {
         Some(y) => {
             let resource = from_yaml(&y)?;
+            let converted = convert(resource)?;
             let api = get_api::<T>(&client.clone(), &ns);
-            create_resource(&api, resource).await.map(Some).map(Right)
+            create_resource(&api, converted).await.map(Some).map(Right)
         }
         None => {
             debug!(

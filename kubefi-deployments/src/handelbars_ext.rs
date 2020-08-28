@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{DirEntry, File};
 use std::io::{BufRead, BufReader, Error};
 use std::path::Path;
 use std::{fs, io};
@@ -12,23 +12,16 @@ pub fn get_files_helper(
     _: &mut RenderContext,
     out: &mut dyn Output,
 ) -> HelperResult {
-    let path_param = h
-        .param(0)
-        .ok_or_else(|| RenderError::new("get_files 'path' parameter at index 0 is missing"))?
-        .render();
-    let indent_param = h
-        .param(1)
-        .ok_or_else(|| RenderError::new("get_files 'indent' parameter at index 1 is missing"))?
-        .value()
-        .as_u64()
-        .ok_or_else(|| {
-            RenderError::new("get_files 'indent' parameter expected to be unsigned int")
-        })? as usize;
+    let path_param = read_path(h)?;
+    let indent_param = read_indent(h)?;
+    let excluded_files = read_exclude_filter(h, ctx)?;
+
     let template_dir_path = format!("./templates/{}", path_param);
     let path = Path::new(&template_dir_path);
 
     if path.exists() {
-        let result: String = fs::read_dir(path)?
+        let result = fs::read_dir(path)?
+            .filter(|entry| !excluded(entry, &excluded_files))
             .map(|entry| {
                 entry.map(|e| {
                     let p = e.path();
@@ -58,6 +51,48 @@ pub fn get_files_helper(
             &path
         )))
     }
+}
+
+fn excluded(entry: &Result<DirEntry, Error>, files: &[String]) -> bool {
+    entry
+        .as_ref()
+        .map(|e| {
+            let p = e.path();
+            let path = &p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            files.iter().any(|f| f == path)
+        })
+        .unwrap_or(false)
+}
+
+fn read_exclude_filter(h: &Helper, ctx: &Context) -> Result<Vec<String>, RenderError> {
+    h.param(2).map(|v| {
+        let key = v.render();
+        let array = ctx.data().get(&key).and_then(|v| v.as_array());
+        array.ok_or_else(|| {
+            let error = format!("get_files 'exclude_filter' parameter is set to {}, but its value is not found in the Template context", key);
+            RenderError::new(error)
+        }).map(
+            |files| {
+                let file_names: Vec<String> = files.iter().flat_map(|f| f.as_str()).map(String::from).collect();
+                file_names
+            }
+        )
+    }).unwrap_or_else(|| Ok(vec![]))
+}
+
+fn read_indent(h: &Helper) -> Result<usize, RenderError> {
+    h.param(1)
+        .ok_or_else(|| RenderError::new("get_files 'indent' parameter at index 1 is missing"))?
+        .value()
+        .as_u64()
+        .ok_or_else(|| RenderError::new("get_files 'indent' parameter expected to be unsigned int"))
+        .map(|v| v as usize)
+}
+
+fn read_path(h: &Helper) -> Result<String, RenderError> {
+    h.param(0)
+        .ok_or_else(|| RenderError::new("get_files 'path' parameter at index 0 is missing"))
+        .map(|v| v.render())
 }
 
 fn format_line(indent_param: usize, f: &File, l: Result<String, Error>) -> String {

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use anyhow::Result;
@@ -53,7 +54,7 @@ impl ConfigMapController {
     async fn handle_update(
         &self,
         d: &NiFiDeployment,
-        name: &str,
+        cr_name: &str,
         ns: &str,
         cm_name: &str,
         current: ConfigMap,
@@ -61,13 +62,22 @@ impl ConfigMapController {
         let ldap = &d.spec.ldap;
         let maybe_yaml =
             self.template
-                .nifi_configmap(&cm_name, &ns, &d.spec.nifi_replicas, ldap)?;
+                .nifi_configmap(&cr_name, &ns, &d.spec.nifi_replicas, ldap)?;
         match maybe_yaml {
             Some(yaml) => {
                 let expected_cm = from_yaml::<ConfigMap>(&yaml)?;
                 let expected_data = expected_cm.data;
+                for (k1, v1) in expected_data.clone().unwrap_or(BTreeMap::new()) {
+                    for (k2, v2) in current.clone().data.unwrap_or(BTreeMap::new()).clone() {
+                        if k1 == k2 && v1 != v2 {
+                            debug!("Found different values for key {}", k1);
+                            debug!("v1:\n{}", v1);
+                            debug!("v2:\n{}", v2);
+                        }
+                    }
+                }
                 if current.data != expected_data {
-                    self.recreate_cm(&name, &ns, &cm_name, &d)
+                    self.recreate_cm(&cr_name, &ns, &cm_name, &d)
                         .await
                         .map(|_| true)
                 } else {
@@ -90,10 +100,16 @@ impl ConfigMapController {
         api.delete(&nifi_cm_name, params).await?;
 
         debug!("Creating new ConfigMap: {}", &nifi_cm_name);
-        create_from_yaml::<ConfigMap, _>(&name, &ns, &self.client, |name| {
-            self.template
-                .nifi_configmap(name, &ns, &d.spec.nifi_replicas, &d.spec.ldap)
-        })
+        create_from_yaml::<ConfigMap, _, _>(
+            &name,
+            &ns,
+            &self.client,
+            |name| {
+                self.template
+                    .nifi_configmap(name, &ns, &d.spec.nifi_replicas, &d.spec.ldap)
+            },
+            Ok,
+        )
         .await
         .map(|_| ())
     }

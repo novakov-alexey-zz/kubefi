@@ -7,8 +7,8 @@ use kube::api::{DeleteParams, ListParams, PostParams};
 use kube::Client;
 
 use crate::controller::{
-    delete_resources, from_yaml, get_api, get_or_create, KUBEFI_LABELS, NIFI_APP_LABEL,
-    ZK_APP_LABEL,
+    delete_resources, from_yaml, get_api, get_or_create, ConfigMapState, KUBEFI_LABELS,
+    NIFI_APP_LABEL, ZK_APP_LABEL,
 };
 use crate::crd::NiFiDeployment;
 use crate::template::Template;
@@ -20,7 +20,7 @@ pub struct StatefulSetController {
     pub template: Rc<Template>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SetParams {
     pub replicas: i32,
     pub container: String,
@@ -28,8 +28,12 @@ struct SetParams {
     pub set_name: String,
     pub app_label: String,
     pub storage_class: Option<String>,
-    pub cm_updated: bool,
+    pub cm_state: ConfigMapState,
 }
+
+const LOGGING_VOLUME: &str = "logback-xml";
+const NIFI_CONTAINER_NAME: &str = "server";
+const ZOOKEEPER_CONTAINER_NAME: &str = "zookeeper";
 
 impl StatefulSetController {
     async fn update_existing_set<F: FnOnce(&str, &NiFiDeployment) -> Result<Option<String>>>(
@@ -38,48 +42,87 @@ impl StatefulSetController {
         cr_name: &str,
         ns: &str,
         set: StatefulSet,
-        set_params: &SetParams,
+        params: &SetParams,
         get_yaml: F,
     ) -> Result<()> {
         let image_changed =
-            self.image_changed(&set, &set_params.image.clone(), &set_params.container);
-        let replicas_changed = self.scale_set(&set, set_params.replicas);
-        let storage_class_changed = self.storage_class(&set, &set_params.storage_class);
+            StatefulSetController::image_changed(&set, &params.image.clone(), &params.container);
+        let replicas_changed = StatefulSetController::scale_set(&set, params.replicas);
+        let storage_class_changed =
+            StatefulSetController::storage_class(&set, &params.storage_class);
+        let logging_cm_changed =
+            StatefulSetController::logging_cm(&set, params.clone().cm_state.logging_cm);
 
         if storage_class_changed {
             let yaml = get_yaml(&cr_name, &d)?;
-            self.recreate_set(&ns, &set_params, yaml).await?;
+            self.recreate_set(&ns, &params, yaml).await?;
         } else {
-            if image_changed || replicas_changed {
+            if image_changed || replicas_changed || logging_cm_changed {
                 debug!(
                     "Updating existing {} statefulset with: {:?}",
-                    &set_params.set_name, &set_params
+                    &params.set_name, &params
                 );
                 let yaml = get_yaml(&cr_name, &d)?;
                 match yaml {
-                    Some(t) => {
-                        let new_set = from_yaml(&t)?;
-                        let api = get_api::<StatefulSet>(&self.client, &ns);
-                        let pp = PostParams::default();
-                        api.replace(&set_params.set_name, &pp, &new_set)
-                            .await
-                            .map(|_| ())
-                            .map_err(Error::from)
-                    }
+                    Some(y) => self.replace_set(&ns, &params, &y).await,
                     None => Ok(()),
                 }?;
             }
 
-            if image_changed || set_params.cm_updated {
-                let params = &DeleteParams::default();
-                let labels = format!("app={},{}", set_params.app_label, KUBEFI_LABELS);
-                let lp = ListParams::default().labels(&labels);
-                debug!("Removing all Pod(s) with: {:?}", labels);
-                delete_resources::<Pod>(&self.client, &ns, &params, &lp).await?;
+            if image_changed || params.cm_state.updated {
+                self.remove_pods(&ns, params, image_changed).await?;
             }
         }
 
         Ok(())
+    }
+
+    fn logging_cm(set: &StatefulSet, logging_cm: Option<String>) -> bool {
+        match logging_cm {
+            Some(logging_cm_name) => {
+                let found =
+                    set.clone()
+                        .spec
+                        .and_then(|s| {
+                            s.template.spec.and_then(|ss| {
+                                let volumes = ss.volumes.unwrap_or_else(Vec::new);
+                                let found = volumes
+                                    .iter()
+                                    .find(|v| v.name == LOGGING_VOLUME)
+                                    .and_then(|v| {
+                                        let current_name =
+                                            v.config_map.as_ref().and_then(|cm| cm.name.clone());
+                                        current_name.filter(|n| n == &logging_cm_name)
+                                    });
+                                found
+                            })
+                        })
+                        .is_some();
+                !found
+            }
+            None => false,
+        }
+    }
+
+    async fn remove_pods(&self, ns: &str, params: &SetParams, image_changed: bool) -> Result<()> {
+        let dp = &DeleteParams::default();
+        let labels = format!("app={},{}", params.app_label, KUBEFI_LABELS);
+        let lp = ListParams::default().labels(&labels);
+        debug!(
+            "Removing all Pod(s) with: {:?}. Reasons: image changed = {}, configMap changed = {}",
+            labels, image_changed, params.cm_state.updated
+        );
+        delete_resources::<Pod>(&self.client, &ns, &dp, &lp).await
+    }
+
+    async fn replace_set(&self, ns: &str, set_params: &SetParams, yaml: &str) -> Result<(), Error> {
+        let new_set = from_yaml(&yaml)?;
+        let api = get_api::<StatefulSet>(&self.client, &ns);
+        let pp = PostParams::default();
+        api.replace(&set_params.set_name, &pp, &new_set)
+            .await
+            .map(|_| ())
+            .map_err(Error::from)
     }
 
     async fn recreate_set(
@@ -105,7 +148,7 @@ impl StatefulSetController {
         Ok(())
     }
 
-    fn scale_set(&self, set: &StatefulSet, expected_replicas: i32) -> bool {
+    fn scale_set(set: &StatefulSet, expected_replicas: i32) -> bool {
         let replicas = set.clone().spec.as_ref().and_then(|s| s.replicas);
         match replicas {
             Some(current_replicas) if current_replicas != expected_replicas => true,
@@ -113,7 +156,7 @@ impl StatefulSetController {
         }
     }
 
-    fn storage_class(&self, set: &StatefulSet, storage_class: &Option<String>) -> bool {
+    fn storage_class(set: &StatefulSet, storage_class: &Option<String>) -> bool {
         match storage_class {
             Some(sc) => set
                 .clone()
@@ -140,6 +183,7 @@ impl StatefulSetController {
             &d.spec.nifi_replicas,
             &d.spec.image,
             &d.spec.storage_class,
+            &d.spec.logging_config_map,
         )
     }
 
@@ -161,26 +205,25 @@ impl StatefulSetController {
         d: &NiFiDeployment,
         name: &str,
         ns: &str,
-        nifi_cm_updated: bool,
+        nifi_cm_state: ConfigMapState,
     ) -> Result<()> {
         let nifi = get_or_create::<StatefulSet, _>(&self.client, &name, &name, &ns, |name| {
             self.nifi_template(&name, &d)
         });
         let zk_set_name = StatefulSetController::zk_set_name(&name);
-        let zk = get_or_create::<StatefulSet, _>(&self.client, &zk_set_name, &name, &ns, |name| {
-            self.zk_template(&name, &d)
-        });
-        let (r1, r2) = futures::future::join(nifi, zk).await;
+        let get_yaml = |name: &str| self.zk_template(&name, &d);
+        let zk = get_or_create::<StatefulSet, _>(&self.client, &zk_set_name, &name, &ns, get_yaml);
+        let (nifi_res, zk_res) = futures::future::join(nifi, zk).await;
 
-        if let Left(Some(existing_set)) = r1? {
+        if let Left(Some(existing_set)) = nifi_res? {
             let params = SetParams {
                 replicas: d.clone().spec.nifi_replicas as i32,
-                container: "server".to_string(),
+                container: NIFI_CONTAINER_NAME.to_string(),
                 image: d.clone().spec.image,
                 set_name: name.to_string(),
                 app_label: NIFI_APP_LABEL.to_string(),
                 storage_class: d.clone().spec.storage_class,
-                cm_updated: nifi_cm_updated,
+                cm_state: nifi_cm_state.clone(),
             };
             self.update_existing_set(
                 &d,
@@ -193,15 +236,15 @@ impl StatefulSetController {
             .await?
         }
 
-        if let Left(Some(existing_set)) = r2? {
+        if let Left(Some(existing_set)) = zk_res? {
             let params = SetParams {
                 replicas: d.clone().spec.zk_replicas as i32,
-                container: "zookeeper".to_string(),
+                container: ZOOKEEPER_CONTAINER_NAME.to_string(),
                 image: d.clone().spec.zk_image,
                 set_name: zk_set_name,
                 app_label: ZK_APP_LABEL.to_string(),
                 storage_class: d.clone().spec.storage_class,
-                cm_updated: false,
+                cm_state: nifi_cm_state.clone(),
             };
             self.update_existing_set(
                 &d,
@@ -216,7 +259,7 @@ impl StatefulSetController {
         Ok(())
     }
 
-    fn image_changed(&self, set: &StatefulSet, image: &Option<String>, container: &str) -> bool {
+    fn image_changed(set: &StatefulSet, image: &Option<String>, container: &str) -> bool {
         match image {
             Some(target_image) => set
                 .clone()

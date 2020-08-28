@@ -294,7 +294,7 @@ spec:
           items:
           - key: logback.xml
             path: logback.xml
-          name: {{ name }}-config
+          name: {{ logging-configmap }}
         name: logback-xml
       - configMap:
           defaultMode: 420

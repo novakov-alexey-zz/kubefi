@@ -40,9 +40,16 @@ impl Template {
         replicas: &u8,
         image_name: &Option<String>,
         storage_class: &Option<String>,
+        logging_configmap: &Option<String>,
     ) -> Result<Option<String>> {
-        let image = json!({ "image": image_name });
-        self.statefulset(name, replicas, image, storage_class, NIFI_STATEFULSET)
+        let mut data = json!({ "image": image_name });
+        let logging_cm_name = logging_configmap
+            .clone()
+            .unwrap_or(format!("{}-config", &name));
+        let logging_data = json!({ "logging-configmap": logging_cm_name });
+        Template::merge_json(&mut data, logging_data);
+
+        self.statefulset(name, replicas, data, storage_class, NIFI_STATEFULSET)
     }
 
     pub fn zk_statefulset(
@@ -100,7 +107,7 @@ impl Template {
     ) -> Result<Option<String>> {
         let mut data = self.get_config(name);
 
-        let replica_indices = if &replicas > &&0 {
+        let replica_indices = if replicas > &0 {
             (0..*replicas).collect::<Vec<_>>()
         } else {
             vec![]

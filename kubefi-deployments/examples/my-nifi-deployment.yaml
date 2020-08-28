@@ -6,3 +6,4 @@ spec:
   image: apache/nifi:1.11.4
   nifiReplicas: 3
   zkReplicas: 3
+  loggingConfigMap: custom-logback-config
