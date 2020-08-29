@@ -31,8 +31,13 @@ impl ConfigMapController {
         let nifi_cm_name = format!("{}-config", &name);
         let nifi_cm =
             get_or_create::<ConfigMap, _>(&self.client, &nifi_cm_name, &name, &ns, |name| {
-                self.template
-                    .nifi_configmap(name, &ns, &d.spec.nifi_replicas, &d.spec.ldap)
+                self.template.nifi_configmap(
+                    name,
+                    &ns,
+                    &d.spec.nifi_replicas,
+                    &d.spec.ldap,
+                    get_jvm_heap(&d),
+                )
             });
 
         let (r1, r2) = futures::future::join(zk_cm, nifi_cm).await;
@@ -58,10 +63,13 @@ impl ConfigMapController {
         cm_name: &str,
         current: ConfigMap,
     ) -> Result<bool> {
-        let ldap = &d.spec.ldap;
-        let maybe_yaml =
-            self.template
-                .nifi_configmap(&cr_name, &ns, &d.spec.nifi_replicas, ldap)?;
+        let maybe_yaml = self.template.nifi_configmap(
+            &cr_name,
+            &ns,
+            &d.spec.nifi_replicas,
+            &d.spec.ldap,
+            get_jvm_heap(&d),
+        )?;
         match maybe_yaml {
             Some(yaml) => {
                 let expected_cm = from_yaml::<ConfigMap>(&yaml)?;
@@ -104,12 +112,24 @@ impl ConfigMapController {
             &ns,
             &self.client,
             |name| {
-                self.template
-                    .nifi_configmap(name, &ns, &d.spec.nifi_replicas, &d.spec.ldap)
+                self.template.nifi_configmap(
+                    name,
+                    &ns,
+                    &d.spec.nifi_replicas,
+                    &d.spec.ldap,
+                    get_jvm_heap(&d),
+                )
             },
             Ok,
         )
         .await
         .map(|_| ())
     }
+}
+
+fn get_jvm_heap(d: &NiFiDeployment) -> Option<String> {
+    d.spec
+        .nifi_resources
+        .as_ref()
+        .and_then(|r| r.jvm_heap_size.clone())
 }

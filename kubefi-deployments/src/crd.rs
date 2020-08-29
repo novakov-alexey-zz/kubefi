@@ -38,11 +38,26 @@ pub struct NiFiDeploymentSpec {
     pub storage_class: Option<String>,
     pub ldap: Option<AuthLdap>,
     pub logging_config_map: Option<String>,
+    pub nifi_resources: Option<Resources>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
 pub struct AuthLdap {
     pub host: String,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Resources {
+    pub jvm_heap_size: Option<String>,
+    pub requests: Option<PodResources>,
+    pub limits: Option<PodResources>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+pub struct PodResources {
+    pub cpu: Option<String>,
+    pub memory: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
@@ -116,7 +131,7 @@ mod tests {
 
     #[test]
     fn print_schema() {
-        let schema = schema_for!(NiFiDeploymentStatus);
+        let schema = schema_for!(NiFiDeploymentSpec);
         println!("{}", serde_json::to_string_pretty(&schema).unwrap());
     }
 }

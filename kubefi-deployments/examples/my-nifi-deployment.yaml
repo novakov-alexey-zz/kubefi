@@ -7,3 +7,5 @@ spec:
   nifiReplicas: 3
   zkReplicas: 3
   loggingConfigMap: custom-logback-config
+  nifiResources:
+    jvmHeapSize: 3g

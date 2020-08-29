@@ -215,10 +215,6 @@ impl StatefulSetController {
         )
     }
 
-    fn zk_set_name(name: &str) -> String {
-        format!("{}-zookeeper", &name)
-    }
-
     pub async fn handle_sets(
         &self,
         d: &NiFiDeployment,
@@ -229,7 +225,7 @@ impl StatefulSetController {
         let nifi = get_or_create::<StatefulSet, _>(&self.client, &name, &name, &ns, |name| {
             self.nifi_template(&name, &d)
         });
-        let zk_set_name = StatefulSetController::zk_set_name(&name);
+        let zk_set_name = zk_set_name(&name);
         let get_yaml = |name: &str| self.zk_template(&name, &d);
         let zk = get_or_create::<StatefulSet, _>(&self.client, &zk_set_name, &name, &ns, get_yaml);
         let (nifi_res, zk_res) = futures::future::join(nifi, zk).await;
@@ -303,4 +299,8 @@ impl StatefulSetController {
             None => false,
         }
     }
+}
+
+fn zk_set_name(name: &str) -> String {
+    format!("{}-zookeeper", &name)
 }

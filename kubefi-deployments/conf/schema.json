@@ -27,6 +27,50 @@
         },
         "storage_class": {
           "type": "string"
+        },
+        "ldap": {
+          "type": "object",
+          "required": [
+            "host"
+          ],
+          "properties": {
+            "host": {
+              "type": "string"
+            }
+          }
+        },
+        "loggingConfigMap": {
+          "type": "string"
+        },
+        "nifiResources": {
+          "type": "object",
+          "properties": {
+            "jvmHeapSize": {
+              "type": "string"
+            },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": "string"
+                },
+                "memory": {
+                  "type": "string"
+                }
+              }
+            },
+            "requests": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": "string"
+                },
+                "memory": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     },

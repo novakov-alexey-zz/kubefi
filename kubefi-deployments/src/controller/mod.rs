@@ -112,8 +112,8 @@ impl NiFiController {
     }
 
     pub async fn on_apply(&self, d: NiFiDeployment) -> Result<Option<ReplaceStatus>> {
-        let name = NiFiController::read_name(&d)?;
-        let ns = NiFiController::read_namespace(&d)?;
+        let name = read_name(&d)?;
+        let ns = read_namespace(&d)?;
         let status = match self.handle_event(d.clone(), &name, &ns).await {
             Ok(true) => {
                 let status = NiFiDeploymentStatus {
@@ -134,15 +134,8 @@ impl NiFiController {
         Ok(status)
     }
 
-    fn read_name(d: &NiFiDeployment) -> Result<String, Error> {
-        d.clone()
-            .metadata
-            .name
-            .ok_or_else(|| Error::from(MissingProperty("name".to_string(), d.kind.clone())))
-    }
-
     pub async fn on_delete(&self, d: NiFiDeployment) -> Result<()> {
-        let ns = NiFiController::read_namespace(&d)?;
+        let ns = read_namespace(&d)?;
         let params = &DeleteParams::default();
         let lp = ListParams::default().labels(KUBEFI_LABELS);
 
@@ -190,13 +183,20 @@ impl NiFiController {
         let service_updated = self.svc_controller.handle_services(&name, &ns).await?;
         Ok(nifi_cm_updated || sets_updated || service_updated)
     }
+}
 
-    fn read_namespace(d: &NiFiDeployment) -> Result<String, Error> {
-        d.clone()
-            .metadata
-            .namespace
-            .ok_or_else(|| Error::from(MissingProperty("namespace".to_string(), d.kind.clone())))
-    }
+fn read_name(d: &NiFiDeployment) -> Result<String> {
+    d.clone()
+        .metadata
+        .name
+        .ok_or_else(|| Error::from(MissingProperty("name".to_string(), d.kind.clone())))
+}
+
+fn read_namespace(d: &NiFiDeployment) -> Result<String, Error> {
+    d.clone()
+        .metadata
+        .namespace
+        .ok_or_else(|| Error::from(MissingProperty("namespace".to_string(), d.kind.clone())))
 }
 
 async fn get_or_create<

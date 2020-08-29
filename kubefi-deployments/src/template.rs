@@ -104,6 +104,7 @@ impl Template {
         ns: &str,
         replicas: &u8,
         ldap: &Option<AuthLdap>,
+        jvm_heap_size: Option<String>,
     ) -> Result<Option<String>> {
         let mut data = self.get_config(name);
 
@@ -128,6 +129,14 @@ impl Template {
             }
             )
         });
+        if let Some(heap_size) = jvm_heap_size {
+            Template::merge_json(
+                &mut data,
+                json!({ "nifi_resources": {
+                 "jvm_heap_size": heap_size
+                }}),
+            );
+        }
         if let Some(cfg) = maybe_ldap {
             Template::merge_json(&mut data, cfg.clone());
         }
