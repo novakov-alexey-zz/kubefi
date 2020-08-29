@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use anyhow::Result;
@@ -67,8 +66,8 @@ impl ConfigMapController {
             Some(yaml) => {
                 let expected_cm = from_yaml::<ConfigMap>(&yaml)?;
                 let expected_data = expected_cm.data;
-                for (k1, v1) in expected_data.clone().unwrap_or(BTreeMap::new()) {
-                    for (k2, v2) in current.clone().data.unwrap_or(BTreeMap::new()).clone() {
+                for (k1, v1) in expected_data.clone().unwrap_or_default() {
+                    for (k2, v2) in current.clone().data.unwrap_or_default().clone() {
                         if k1 == k2 && v1 != v2 {
                             debug!("Found different values for key {}", k1);
                             debug!("v1:\n{}", v1);

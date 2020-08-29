@@ -13,7 +13,7 @@ use crate::controller::{
 use crate::crd::NiFiDeployment;
 use crate::template::Template;
 
-use super::either::Either::Left;
+use super::either::Either::{Left, Right};
 
 pub struct StatefulSetController {
     pub client: Rc<Client>,
@@ -28,7 +28,7 @@ struct SetParams {
     pub set_name: String,
     pub app_label: String,
     pub storage_class: Option<String>,
-    pub cm_state: ConfigMapState,
+    pub cm_state: Option<ConfigMapState>,
 }
 
 const LOGGING_VOLUME: &str = "logback-xml";
@@ -44,23 +44,29 @@ impl StatefulSetController {
         set: StatefulSet,
         params: &SetParams,
         get_yaml: F,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let image_changed =
             StatefulSetController::image_changed(&set, &params.image.clone(), &params.container);
         let replicas_changed = StatefulSetController::scale_set(&set, params.replicas);
         let storage_class_changed =
             StatefulSetController::storage_class(&set, &params.storage_class);
-        let logging_cm_changed =
-            StatefulSetController::logging_cm(&set, params.clone().cm_state.logging_cm);
+        let logging_cm_changed = StatefulSetController::logging_cm(
+            &set,
+            params.clone().cm_state.and_then(|cm| cm.logging_cm),
+        );
 
         if storage_class_changed {
             let yaml = get_yaml(&cr_name, &d)?;
             self.recreate_set(&ns, &params, yaml).await?;
         } else {
             if image_changed || replicas_changed || logging_cm_changed {
+                let reason = format!(
+                    "image_changed: {}, replicas_changed: {}, logging_cm_changed: {}",
+                    image_changed, replicas_changed, logging_cm_changed
+                );
                 debug!(
-                    "Updating existing {} statefulset with: {:?}",
-                    &params.set_name, &params
+                    "Updating existing {} statefulset with: {:?}. Reason: {}",
+                    &params.set_name, &params, reason
                 );
                 let yaml = get_yaml(&cr_name, &d)?;
                 match yaml {
@@ -69,12 +75,19 @@ impl StatefulSetController {
                 }?;
             }
 
-            if image_changed || params.cm_state.updated {
+            if image_changed
+                || params
+                    .cm_state
+                    .clone()
+                    .map(|cm| cm.updated)
+                    .unwrap_or(false)
+            {
                 self.remove_pods(&ns, params, image_changed).await?;
             }
         }
-
-        Ok(())
+        let state_changed =
+            storage_class_changed || image_changed || replicas_changed || logging_cm_changed;
+        Ok(state_changed)
     }
 
     fn logging_cm(set: &StatefulSet, logging_cm: Option<String>) -> bool {
@@ -109,8 +122,14 @@ impl StatefulSetController {
         let labels = format!("app={},{}", params.app_label, KUBEFI_LABELS);
         let lp = ListParams::default().labels(&labels);
         debug!(
-            "Removing all Pod(s) with: {:?}. Reasons: image changed = {}, configMap changed = {}",
-            labels, image_changed, params.cm_state.updated
+            "Removing all Pod(s) with: {:?}. Reason: image changed = {}, configMap changed = {}",
+            labels,
+            image_changed,
+            params
+                .cm_state
+                .clone()
+                .map(|cm| cm.updated)
+                .unwrap_or(false)
         );
         delete_resources::<Pod>(&self.client, &ns, &dp, &lp).await
     }
@@ -206,7 +225,7 @@ impl StatefulSetController {
         name: &str,
         ns: &str,
         nifi_cm_state: ConfigMapState,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let nifi = get_or_create::<StatefulSet, _>(&self.client, &name, &name, &ns, |name| {
             self.nifi_template(&name, &d)
         });
@@ -215,48 +234,57 @@ impl StatefulSetController {
         let zk = get_or_create::<StatefulSet, _>(&self.client, &zk_set_name, &name, &ns, get_yaml);
         let (nifi_res, zk_res) = futures::future::join(nifi, zk).await;
 
-        if let Left(Some(existing_set)) = nifi_res? {
-            let params = SetParams {
-                replicas: d.clone().spec.nifi_replicas as i32,
-                container: NIFI_CONTAINER_NAME.to_string(),
-                image: d.clone().spec.image,
-                set_name: name.to_string(),
-                app_label: NIFI_APP_LABEL.to_string(),
-                storage_class: d.clone().spec.storage_class,
-                cm_state: nifi_cm_state.clone(),
-            };
-            self.update_existing_set(
-                &d,
-                &name,
-                &ns,
-                existing_set,
-                &params,
-                |cr_name, deployment| self.nifi_template(&cr_name, &deployment),
-            )
-            .await?
-        }
+        let nifi_updated = match nifi_res? {
+            Left(Some(existing_set)) => {
+                let params = SetParams {
+                    replicas: d.clone().spec.nifi_replicas as i32,
+                    container: NIFI_CONTAINER_NAME.to_string(),
+                    image: d.clone().spec.image,
+                    set_name: name.to_string(),
+                    app_label: NIFI_APP_LABEL.to_string(),
+                    storage_class: d.clone().spec.storage_class,
+                    cm_state: Some(nifi_cm_state.clone()),
+                };
+                self.update_existing_set(
+                    &d,
+                    &name,
+                    &ns,
+                    existing_set,
+                    &params,
+                    |cr_name, deployment| self.nifi_template(&cr_name, &deployment),
+                )
+                .await
+            }
+            Right(Some(_)) => Ok(true),
+            _ => Ok(false),
+        };
 
-        if let Left(Some(existing_set)) = zk_res? {
-            let params = SetParams {
-                replicas: d.clone().spec.zk_replicas as i32,
-                container: ZOOKEEPER_CONTAINER_NAME.to_string(),
-                image: d.clone().spec.zk_image,
-                set_name: zk_set_name,
-                app_label: ZK_APP_LABEL.to_string(),
-                storage_class: d.clone().spec.storage_class,
-                cm_state: nifi_cm_state.clone(),
-            };
-            self.update_existing_set(
-                &d,
-                &name,
-                &ns,
-                existing_set,
-                &params,
-                |cr_name, deployment| self.zk_template(&cr_name, &deployment),
-            )
-            .await?
-        }
-        Ok(())
+        let zk_updated = match zk_res? {
+            Left(Some(existing_set)) if nifi_updated.is_ok() => {
+                let params = SetParams {
+                    replicas: d.clone().spec.zk_replicas as i32,
+                    container: ZOOKEEPER_CONTAINER_NAME.to_string(),
+                    image: d.clone().spec.zk_image,
+                    set_name: zk_set_name,
+                    app_label: ZK_APP_LABEL.to_string(),
+                    storage_class: d.clone().spec.storage_class,
+                    cm_state: None,
+                };
+                self.update_existing_set(
+                    &d,
+                    &name,
+                    &ns,
+                    existing_set,
+                    &params,
+                    |cr_name, deployment| self.zk_template(&cr_name, &deployment),
+                )
+                .await
+            }
+            Right(Some(_)) => Ok(true),
+            _ => Ok(false),
+        };
+
+        nifi_updated.and(zk_updated)
     }
 
     fn image_changed(set: &StatefulSet, image: &Option<String>, container: &str) -> bool {

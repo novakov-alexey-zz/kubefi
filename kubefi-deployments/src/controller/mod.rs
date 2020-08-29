@@ -114,17 +114,24 @@ impl NiFiController {
     pub async fn on_apply(&self, d: NiFiDeployment) -> Result<Option<ReplaceStatus>> {
         let name = NiFiController::read_name(&d)?;
         let ns = NiFiController::read_namespace(&d)?;
-        let error = self
-            .handle_event(d.clone(), &name, &ns)
-            .await
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        let status = NiFiDeploymentStatus {
-            nifi_replicas: d.spec.nifi_replicas,
-            error_msg: error,
+        let status = match self.handle_event(d.clone(), &name, &ns).await {
+            Ok(true) => {
+                let status = NiFiDeploymentStatus {
+                    nifi_replicas: d.spec.nifi_replicas,
+                    error_msg: "".to_string(),
+                };
+                Some(ReplaceStatus { name, ns, status })
+            }
+            Ok(_) => None,
+            Err(e) => {
+                let status = NiFiDeploymentStatus {
+                    nifi_replicas: d.spec.nifi_replicas,
+                    error_msg: e.to_string(),
+                };
+                Some(ReplaceStatus { name, ns, status })
+            }
         };
-        Ok(Some(ReplaceStatus { name, ns, status }))
+        Ok(status)
     }
 
     fn read_name(d: &NiFiDeployment) -> Result<String, Error> {
@@ -170,16 +177,18 @@ impl NiFiController {
             .fold(Ok(()), |acc, r| acc.and(r.map_err(Error::from)))
     }
 
-    async fn handle_event(&self, d: NiFiDeployment, name: &str, ns: &str) -> Result<()> {
+    async fn handle_event(&self, d: NiFiDeployment, name: &str, ns: &str) -> Result<bool> {
         let nifi_cm_updated = self.cm_controller.handle_configmaps(&d, &name, &ns).await?;
         let cm_state = ConfigMapState {
             updated: nifi_cm_updated,
             logging_cm: d.clone().spec.logging_config_map,
         };
-        self.sets_controller
+        let sets_updated = self
+            .sets_controller
             .handle_sets(&d, &name, &ns, cm_state)
             .await?;
-        self.svc_controller.handle_services(&name, &ns).await
+        let service_updated = self.svc_controller.handle_services(&name, &ns).await?;
+        Ok(nifi_cm_updated || sets_updated || service_updated)
     }
 
     fn read_namespace(d: &NiFiDeployment) -> Result<String, Error> {
