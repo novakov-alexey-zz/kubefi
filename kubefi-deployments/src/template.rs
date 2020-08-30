@@ -1,3 +1,5 @@
+use crate::crd::NiFiDeploymentSpec;
+use crate::crd::PodResources;
 use std::path::Path;
 
 use anyhow::{Error, Result};
@@ -37,19 +39,40 @@ impl Template {
     pub fn nifi_statefulset(
         &self,
         name: &str,
-        replicas: &u8,
-        image_name: &Option<String>,
-        storage_class: &Option<String>,
-        logging_configmap: &Option<String>,
+        spec: &NiFiDeploymentSpec,
     ) -> Result<Option<String>> {
-        let mut data = json!({ "image": image_name });
-        let logging_cm_name = logging_configmap
+        let mut data = json!({ "image": spec.image });
+        let logging_cm_name = &spec
+            .logging_config_map
             .clone()
             .unwrap_or(format!("{}-config", &name));
         let logging_data = json!({ "logging-configmap": logging_cm_name });
         Template::merge_json(&mut data, logging_data);
 
-        self.statefulset(name, replicas, data, storage_class, NIFI_STATEFULSET)
+        if let Some(res) = &spec.nifi_resources {
+            if let Some(jvm_heap_size) = &res.jvm_heap_size {
+                Template::merge_json(
+                    &mut data,
+                    json!({ "nifiResources": {
+                     "jvmHeapSize": jvm_heap_size
+                    }}),
+                );
+            }
+            
+            let requests = self.get_pod_resources(&res.requests, "requests");
+            Template::merge_json(&mut data, requests);
+
+            let limits = self.get_pod_resources(&res.limits, "limits");
+            Template::merge_json(&mut data, limits);
+        }
+
+        self.statefulset(
+            name,
+            &spec.nifi_replicas,
+            data,
+            &spec.storage_class,
+            NIFI_STATEFULSET,
+        )
     }
 
     pub fn zk_statefulset(
@@ -104,7 +127,6 @@ impl Template {
         ns: &str,
         replicas: &u8,
         ldap: &Option<AuthLdap>,
-        jvm_heap_size: Option<String>,
     ) -> Result<Option<String>> {
         let mut data = self.get_config(name);
 
@@ -129,19 +151,42 @@ impl Template {
             }
             )
         });
-        if let Some(heap_size) = jvm_heap_size {
-            Template::merge_json(
-                &mut data,
-                json!({ "nifi_resources": {
-                 "jvm_heap_size": heap_size
-                }}),
-            );
-        }
         if let Some(cfg) = maybe_ldap {
             Template::merge_json(&mut data, cfg.clone());
         }
 
         self.configmap(NIFI_CONFIGMAP, &data)
+    }
+
+    fn get_pod_resources(
+        &self,        
+        pod_res: &Option<PodResources>,
+        resource_name: &str,
+    ) -> Value {
+        let mut data = json!({});
+        if let Some(res) = &pod_res {
+            if let Some(cpu) = &res.cpu {
+                Template::merge_json(
+                    &mut data,
+                    json!({ "nifiResources": {
+                     resource_name: {
+                         "cpu": cpu
+                     }
+                    }}),
+                );
+            };
+            if let Some(memory) = &res.memory {
+                Template::merge_json(
+                    &mut data,
+                    json!({ "nifiResources": {
+                    resource_name: {
+                         "memory": memory
+                     }
+                    }}),
+                );
+            };
+        }
+        data
     }
 
     pub fn zk_configmap(&self, name: &str) -> Result<Option<String>> {

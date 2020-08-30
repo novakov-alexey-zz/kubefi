@@ -117,7 +117,13 @@ spec:
           periodSeconds: 20
           successThreshold: 1
           timeoutSeconds: 1
-        resources: {}
+        resources: {{#if nifiResources.requests}} 
+          requests: {{#if nifiResources.requests.cpu}}
+            cpu: {{nifiResources.requests.cpu}}{{/if}}
+            memory: {{#if nifiResources.requests.memory}}{{nifiResources.requests.memory}}{{/if}}{{/if}}{{#if nifiResources.limits}}
+          limits: 
+            cpu:{{#if nifiResources.limits.cpu}}{{nifiResources.limits.cpu}}{{/if}}{{#if nifiResources.limits.memory}}
+            memory:{{nifiResources.limits.memory}}{{/if}}{{/if}}{{#if (not (or nifiResources.requests nifiResources.limits))}}{}{{/if}} 
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:

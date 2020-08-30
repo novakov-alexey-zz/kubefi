@@ -45,15 +45,11 @@ impl StatefulSetController {
         params: &SetParams,
         get_yaml: F,
     ) -> Result<bool> {
-        let image_changed =
-            StatefulSetController::image_changed(&set, &params.image.clone(), &params.container);
-        let replicas_changed = StatefulSetController::scale_set(&set, params.replicas);
-        let storage_class_changed =
-            StatefulSetController::storage_class(&set, &params.storage_class);
-        let logging_cm_changed = StatefulSetController::logging_cm(
-            &set,
-            params.clone().cm_state.and_then(|cm| cm.logging_cm),
-        );
+        let image_changed = image_changed(&set, &params.image.clone(), &params.container);
+        let replicas_changed = scale_set(&set, params.replicas);
+        let storage_class_changed = storage_class(&set, &params.storage_class);
+        let logging_cm_changed =
+            logging_cm(&set, params.clone().cm_state.and_then(|cm| cm.logging_cm));
 
         if storage_class_changed {
             let yaml = get_yaml(&cr_name, &d)?;
@@ -88,33 +84,6 @@ impl StatefulSetController {
         let state_changed =
             storage_class_changed || image_changed || replicas_changed || logging_cm_changed;
         Ok(state_changed)
-    }
-
-    fn logging_cm(set: &StatefulSet, logging_cm: Option<String>) -> bool {
-        match logging_cm {
-            Some(logging_cm_name) => {
-                let found =
-                    set.clone()
-                        .spec
-                        .and_then(|s| {
-                            s.template.spec.and_then(|ss| {
-                                let volumes = ss.volumes.unwrap_or_else(Vec::new);
-                                let found = volumes
-                                    .iter()
-                                    .find(|v| v.name == LOGGING_VOLUME)
-                                    .and_then(|v| {
-                                        let current_name =
-                                            v.config_map.as_ref().and_then(|cm| cm.name.clone());
-                                        current_name.filter(|n| n == &logging_cm_name)
-                                    });
-                                found
-                            })
-                        })
-                        .is_some();
-                !found
-            }
-            None => false,
-        }
     }
 
     async fn remove_pods(&self, ns: &str, params: &SetParams, image_changed: bool) -> Result<()> {
@@ -167,43 +136,8 @@ impl StatefulSetController {
         Ok(())
     }
 
-    fn scale_set(set: &StatefulSet, expected_replicas: i32) -> bool {
-        let replicas = set.clone().spec.as_ref().and_then(|s| s.replicas);
-        match replicas {
-            Some(current_replicas) if current_replicas != expected_replicas => true,
-            _ => false,
-        }
-    }
-
-    fn storage_class(set: &StatefulSet, storage_class: &Option<String>) -> bool {
-        match storage_class {
-            Some(sc) => set
-                .clone()
-                .spec
-                .and_then(|s| {
-                    s.volume_claim_templates.map(|vc| {
-                        vc.iter().any(|pvc| {
-                            pvc.spec.clone().into_iter().any(|spec| {
-                                spec.storage_class_name
-                                    .map(|scn| &scn != sc)
-                                    .unwrap_or(false)
-                            })
-                        })
-                    })
-                })
-                .unwrap_or(false),
-            None => false,
-        }
-    }
-
     pub fn nifi_template(&self, name: &str, d: &NiFiDeployment) -> Result<Option<String>> {
-        self.template.nifi_statefulset(
-            &name,
-            &d.spec.nifi_replicas,
-            &d.spec.image,
-            &d.spec.storage_class,
-            &d.spec.logging_config_map,
-        )
+        self.template.nifi_statefulset(&name, &d.spec)
     }
 
     pub fn zk_template(&self, name: &str, d: &NiFiDeployment) -> Result<Option<String>> {
@@ -282,25 +216,82 @@ impl StatefulSetController {
 
         nifi_updated.and(zk_updated)
     }
-
-    fn image_changed(set: &StatefulSet, image: &Option<String>, container: &str) -> bool {
-        match image {
-            Some(target_image) => set
-                .clone()
-                .spec
-                .and_then(|s| {
-                    s.template.spec.and_then(|spec| {
-                        spec.containers.into_iter().find(|c| {
-                            c.name == container && c.image.iter().any(|img| img != target_image)
-                        })
-                    })
-                })
-                .is_some(),
-            None => false,
-        }
-    }
 }
 
 fn zk_set_name(name: &str) -> String {
     format!("{}-zookeeper", &name)
+}
+
+fn image_changed(set: &StatefulSet, image: &Option<String>, container: &str) -> bool {
+    match image {
+        Some(target_image) => set
+            .clone()
+            .spec
+            .and_then(|s| {
+                s.template.spec.and_then(|spec| {
+                    spec.containers.into_iter().find(|c| {
+                        c.name == container && c.image.iter().any(|img| img != target_image)
+                    })
+                })
+            })
+            .is_some(),
+        None => false,
+    }
+}
+
+fn scale_set(set: &StatefulSet, expected_replicas: i32) -> bool {
+    let replicas = set.clone().spec.as_ref().and_then(|s| s.replicas);
+    match replicas {
+        Some(current_replicas) if current_replicas != expected_replicas => true,
+        _ => false,
+    }
+}
+
+fn storage_class(set: &StatefulSet, storage_class: &Option<String>) -> bool {
+    match storage_class {
+        Some(sc) => set
+            .clone()
+            .spec
+            .and_then(|s| {
+                s.volume_claim_templates.map(|vc| {
+                    vc.iter().any(|pvc| {
+                        pvc.spec.clone().into_iter().any(|spec| {
+                            spec.storage_class_name
+                                .map(|scn| &scn != sc)
+                                .unwrap_or(false)
+                        })
+                    })
+                })
+            })
+            .unwrap_or(false),
+        None => false,
+    }
+}
+
+fn logging_cm(set: &StatefulSet, logging_cm: Option<String>) -> bool {
+    match logging_cm {
+        Some(logging_cm_name) => {
+            let found = set
+                .clone()
+                .spec
+                .and_then(|s| {
+                    s.template.spec.and_then(|ss| {
+                        let volumes = ss.volumes.unwrap_or_else(Vec::new);
+                        let found =
+                            volumes
+                                .iter()
+                                .find(|v| v.name == LOGGING_VOLUME)
+                                .and_then(|v| {
+                                    let current_name =
+                                        v.config_map.as_ref().and_then(|cm| cm.name.clone());
+                                    current_name.filter(|n| n == &logging_cm_name)
+                                });
+                        found
+                    })
+                })
+                .is_some();
+            !found
+        }
+        None => false,
+    }
 }

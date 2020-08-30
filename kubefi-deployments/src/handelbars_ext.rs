@@ -105,18 +105,54 @@ fn format_line(indent_param: usize, f: &File, l: Result<String, Error>) -> Strin
 
 #[cfg(test)]
 mod tests {
+    use crate::crd::NiFiDeploymentSpec;
+    use crate::crd::PodResources;
+    use crate::crd::Resources;
     use std::path::Path;
 
     use crate::template::Template;
 
     #[test]
-    fn print_template() {
+    fn print_configmap() {
         let config = super::super::config::read_nifi_config().expect("Failed to load config");
         let template = Template::new(Path::new("./templates"), config)
             .expect("Failed to create template engine");
         let name = "test".to_string();
         let content = template
-            .nifi_configmap(&name, "test", &(3 as u8), &None, None)
+            .nifi_configmap(&name, "test", &(3 as u8), &None)
+            .expect("Failed to render configmap template");
+        println!("content:\n{}", content.unwrap())
+    }
+
+    #[test]
+    fn print_statefulset() {
+        let config = super::super::config::read_nifi_config().expect("Failed to load config");
+        let template =
+            Template::new(Path::new("./templates"), config).expect("Failed to create template engine");
+        let name = "test".to_string();
+        let res = Some(Resources {
+            jvm_heap_size: None,
+            requests: Some(PodResources {
+                cpu: Some("rrrr".to_string()),
+                memory: Some("rrr_mmmm".to_string()),
+            }),
+            limits: Some(PodResources {
+                cpu: Some("llll".to_string()),
+                memory: Some("llll_mmm".to_string()),
+            })
+        });
+        let spec = NiFiDeploymentSpec {
+            nifi_replicas: 2,
+            zk_replicas: 2,
+            image: None,
+            zk_image: None,
+            storage_class: None,
+            ldap: None,
+            logging_config_map: None,
+            nifi_resources: res,
+        };
+        let content = template
+            .nifi_statefulset(&name, &spec)
             .expect("Failed to render configmap template");
         println!("content:\n{}", content.unwrap())
     }

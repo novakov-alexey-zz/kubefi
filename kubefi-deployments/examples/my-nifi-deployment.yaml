@@ -8,4 +8,7 @@ spec:
   zkReplicas: 3
   loggingConfigMap: custom-logback-config
   nifiResources:
-    jvmHeapSize: 3g
+    jvmHeapSize: 2g
+    requests:
+      cpu: 2000m
+      memory: 2048Mi

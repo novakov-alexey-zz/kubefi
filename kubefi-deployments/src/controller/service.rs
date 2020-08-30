@@ -61,7 +61,7 @@ impl ServiceController {
 
 fn resource_updated<T>(result: Either<Option<T>, Option<T>>) -> bool {
     match result {
-        Left(Some(_)) => true,
+        Left(Some(_)) => false,
         Right(Some(_)) => true,
         _ => false,
     }

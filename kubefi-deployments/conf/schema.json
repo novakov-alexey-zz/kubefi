@@ -22,10 +22,10 @@
         "image": {
           "type": "string"
         },
-        "zk_image": {
+        "zkImage": {
           "type": "string"
         },
-        "storage_class": {
+        "storageClass": {
           "type": "string"
         },
         "ldap": {
@@ -77,12 +77,12 @@
     "status": {
       "type": "object",
       "properties": {
-        "nifi_replicas": {
+        "nifiReplicas": {
           "type": "integer",
           "format": "uint8",
           "minimum": 0.0
         },
-        "error_msg": {
+        "errorMsg": {
           "type": "string"
         }
       },
