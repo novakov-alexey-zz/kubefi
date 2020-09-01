@@ -1,5 +1,3 @@
-use crate::crd::NiFiDeploymentSpec;
-use crate::crd::PodResources;
 use std::path::Path;
 
 use anyhow::{Error, Result};
@@ -7,6 +5,8 @@ use handlebars::Handlebars;
 use serde_json::Value;
 
 use crate::crd::AuthLdap;
+use crate::crd::NiFiDeploymentSpec;
+use crate::crd::PodResources;
 use crate::handelbars_ext::get_files_helper;
 
 pub struct Template {
@@ -47,23 +47,23 @@ impl Template {
             .clone()
             .unwrap_or(format!("{}-config", &name));
         let logging_data = json!({ "logging-configmap": logging_cm_name });
-        Template::merge_json(&mut data, logging_data);
+        merge_json(&mut data, logging_data);
 
         if let Some(res) = &spec.nifi_resources {
             if let Some(jvm_heap_size) = &res.jvm_heap_size {
-                Template::merge_json(
+                merge_json(
                     &mut data,
                     json!({ "nifiResources": {
                      "jvmHeapSize": jvm_heap_size
                     }}),
                 );
             }
-            
+
             let requests = self.get_pod_resources(&res.requests, "requests");
-            Template::merge_json(&mut data, requests);
+            merge_json(&mut data, requests);
 
             let limits = self.get_pod_resources(&res.limits, "limits");
-            Template::merge_json(&mut data, limits);
+            merge_json(&mut data, limits);
         }
 
         self.statefulset(
@@ -117,7 +117,7 @@ impl Template {
     fn get_config(&self, name: &str) -> Value {
         let mut current_cfg = self.config.clone();
         let data = json!({ "name": name });
-        Template::merge_json(&mut current_cfg, data);
+        merge_json(&mut current_cfg, data);
         current_cfg
     }
 
@@ -135,7 +135,7 @@ impl Template {
         } else {
             vec![]
         };
-        Template::merge_json(
+        merge_json(
             &mut data,
             json!({ "ns": ns, "nifiReplicas": replica_indices}),
         );
@@ -152,21 +152,17 @@ impl Template {
             )
         });
         if let Some(cfg) = maybe_ldap {
-            Template::merge_json(&mut data, cfg.clone());
+            merge_json(&mut data, cfg.clone());
         }
 
         self.configmap(NIFI_CONFIGMAP, &data)
     }
 
-    fn get_pod_resources(
-        &self,        
-        pod_res: &Option<PodResources>,
-        resource_name: &str,
-    ) -> Value {
+    fn get_pod_resources(&self, pod_res: &Option<PodResources>, resource_name: &str) -> Value {
         let mut data = json!({});
         if let Some(res) = &pod_res {
             if let Some(cpu) = &res.cpu {
-                Template::merge_json(
+                merge_json(
                     &mut data,
                     json!({ "nifiResources": {
                      resource_name: {
@@ -176,7 +172,7 @@ impl Template {
                 );
             };
             if let Some(memory) = &res.memory {
-                Template::merge_json(
+                merge_json(
                     &mut data,
                     json!({ "nifiResources": {
                     resource_name: {
@@ -218,32 +214,32 @@ impl Template {
             "name": name,
             "replicas": &replicas.to_string()
         });
-        Template::merge_json(&mut data, set_properties);
+        merge_json(&mut data, set_properties);
 
         if let Some(sc) = storage_class {
             let sc_json = json!({ "storageClass": sc });
-            Template::merge_json(&mut data, sc_json);
+            merge_json(&mut data, sc_json);
         }
 
         let mut current_cfg = self.config.clone();
-        Template::merge_json(&mut current_cfg, data);
+        merge_json(&mut current_cfg, data);
         debug!("{} template params:\n{}", &template, &current_cfg);
         self.render(&current_cfg, template)
     }
+}
 
-    fn merge_json(a: &mut Value, b: Value) {
-        if let Value::Object(a) = a {
-            if let Value::Object(b) = b {
-                for (k, v) in b {
-                    if v.is_null() {
-                        a.remove(&k);
-                    } else {
-                        Template::merge_json(a.entry(k).or_insert(Value::Null), v);
-                    }
+fn merge_json(a: &mut Value, b: Value) {
+    if let Value::Object(a) = a {
+        if let Value::Object(b) = b {
+            for (k, v) in b {
+                if v.is_null() {
+                    a.remove(&k);
+                } else {
+                    merge_json(a.entry(k).or_insert(Value::Null), v);
                 }
-                return;
             }
+            return;
         }
-        *a = b;
     }
+    *a = b;
 }

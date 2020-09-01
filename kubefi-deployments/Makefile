@@ -10,9 +10,10 @@ args = `arg="$(filter-out $@,$(MAKECMDGOALS))" && echo $${arg:-${1}}`
 OPERATOR_NAMESPACE=test
 PATH_TO_CONFIGS=conf/
 IMAGE_REGISTRY=alexeyn
+KUBEFI_VER=0.1.1
 
 show-version:
-	cargo pkgid
+	cargo pkgid	
 
 deploy-configs:
 	kubectl create configmap kubefi-configs \
@@ -35,6 +36,6 @@ undeploy-kubefi:
 build-image:
 	sh build-image.sh $(KUBEFI_VER)
 
-push-image: build-image
+push-image:
 	docker tag kubefi-deployments-operator:$(KUBEFI_VER) $(IMAGE_REGISTRY)/kubefi-deployments-operator:$(KUBEFI_VER)
 	docker push $(IMAGE_REGISTRY)/kubefi-deployments-operator:$(KUBEFI_VER)

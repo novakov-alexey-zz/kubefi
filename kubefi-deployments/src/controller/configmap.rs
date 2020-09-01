@@ -69,8 +69,6 @@ impl ConfigMapController {
                     for (k2, v2) in current.clone().data.unwrap_or_default().clone() {
                         if k1 == k2 && v1 != v2 {
                             debug!("Found different values for key {}", k1);
-                            debug!("v1:\n{}", v1);
-                            debug!("v2:\n{}", v2);
                         }
                     }
                 }
