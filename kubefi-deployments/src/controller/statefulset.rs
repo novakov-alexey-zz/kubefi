@@ -143,8 +143,8 @@ impl StatefulSetController {
     pub fn zk_template(&self, name: &str, d: &NiFiDeployment) -> Result<Option<String>> {
         self.template.zk_statefulset(
             &name,
-            &d.spec.zk_replicas,
-            &d.spec.zk_image,
+            &d.spec.zk.replicas,
+            &d.spec.zk.image,
             &d.spec.storage_class,
         )
     }
@@ -192,9 +192,9 @@ impl StatefulSetController {
         let zk_updated = match zk_res? {
             Left(Some(existing_set)) if nifi_updated.is_ok() => {
                 let params = SetParams {
-                    replicas: d.clone().spec.zk_replicas as i32,
+                    replicas: d.clone().spec.zk.replicas as i32,
                     container: ZOOKEEPER_CONTAINER_NAME.to_string(),
-                    image: d.clone().spec.zk_image,
+                    image: d.clone().spec.zk.image,
                     set_name: zk_set_name,
                     app_label: ZK_APP_LABEL.to_string(),
                     storage_class: d.clone().spec.storage_class,

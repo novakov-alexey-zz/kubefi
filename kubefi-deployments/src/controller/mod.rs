@@ -180,7 +180,10 @@ impl NiFiController {
             .sets_controller
             .handle_sets(&d, &name, &ns, cm_state)
             .await?;
-        let service_updated = self.svc_controller.handle_services(&name, &ns).await?;
+        let service_updated = self
+            .svc_controller
+            .handle_services(&name, &ns, &d.spec.ingress)
+            .await?;
         debug!(
             "Resource updates: configmap = {}, statefulsets = {}, services = {}",
             nifi_cm_updated, sets_updated, service_updated

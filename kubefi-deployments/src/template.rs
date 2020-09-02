@@ -4,9 +4,9 @@ use anyhow::{Error, Result};
 use handlebars::Handlebars;
 use serde_json::Value;
 
-use crate::crd::AuthLdap;
 use crate::crd::NiFiDeploymentSpec;
 use crate::crd::PodResources;
+use crate::crd::{AuthLdap, IngressCfg};
 use crate::handelbars_ext::get_files_helper;
 
 pub struct Template {
@@ -108,8 +108,16 @@ impl Template {
         self.render(&data, template)
     }
 
-    pub fn ingress(&self, name: &str) -> Result<Option<String>> {
-        let data = self.get_config(name);
+    pub fn ingress(&self, name: &str, cfg: &Option<IngressCfg>) -> Result<Option<String>> {
+        let mut data = self.get_config(name);
+        if let Some(ing) = cfg {
+            let ing_json = json!({ "ingress": {
+                "enabled": true,
+                "host": ing.host,
+                "ingressClass": ing.ingress_class
+            } });
+            merge_json(&mut data, ing_json);
+        }
         debug!("ingress template params\n:{}", &data);
         self.render(&data, INGRESS)
     }

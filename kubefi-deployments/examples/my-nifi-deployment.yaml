@@ -5,7 +5,9 @@ metadata:
 spec:
   image: apache/nifi:1.11.4
   nifiReplicas: 3
-  zkReplicas: 3
+  zk:
+    replicas: 3
+    image: zookeeper:3.5.5
   loggingConfigMap: custom-logback-config
   nifiResources:
     jvmHeapSize: 2g

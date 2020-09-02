@@ -10,6 +10,7 @@ use crate::template::Template;
 
 use super::either::Either;
 use super::either::Either::{Left, Right};
+use crate::crd::IngressCfg;
 
 pub struct ServiceController {
     pub client: Rc<Client>,
@@ -17,7 +18,12 @@ pub struct ServiceController {
 }
 
 impl ServiceController {
-    pub async fn handle_services(&self, name: &str, ns: &str) -> Result<bool> {
+    pub async fn handle_services(
+        &self,
+        name: &str,
+        ns: &str,
+        ingress: &Option<IngressCfg>,
+    ) -> Result<bool> {
         let svc = get_or_create::<Service, _>(&self.client, &name, &name, &ns, |name| {
             self.template.nifi_service(name)
         });
@@ -42,7 +48,7 @@ impl ServiceController {
         let ingress_name = format!("{}-ingress", &name);
         let ingress =
             get_or_create::<Ingress, _>(&self.client, &ingress_name, &name, &ns, |name| {
-                self.template.ingress(name)
+                self.template.ingress(name, &ingress)
             });
 
         let (r1, r2, r3, r4, r5) =

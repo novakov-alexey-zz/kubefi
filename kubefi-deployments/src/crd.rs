@@ -32,13 +32,26 @@ pub const CRD_NAME: &str = "nifideployments.io.github.novakov-alexey";
 #[serde(rename_all = "camelCase")]
 pub struct NiFiDeploymentSpec {
     pub nifi_replicas: u8,
-    pub zk_replicas: u8,
+    pub zk: ZooKeeper,
     pub image: Option<String>,
-    pub zk_image: Option<String>,
     pub storage_class: Option<String>,
     pub ldap: Option<AuthLdap>,
     pub logging_config_map: Option<String>,
     pub nifi_resources: Option<Resources>,
+    pub ingress: Option<IngressCfg>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
+pub struct ZooKeeper {
+    pub replicas: u8,
+    pub image: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IngressCfg {
+    pub host: String,
+    pub ingress_class: String,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default, JsonSchema)]
