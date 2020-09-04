@@ -39,3 +39,10 @@ build-image:
 push-image:
 	docker tag kubefi-deployments-operator:$(KUBEFI_VER) $(IMAGE_REGISTRY)/kubefi-deployments-operator:$(KUBEFI_VER)
 	docker push $(IMAGE_REGISTRY)/kubefi-deployments-operator:$(KUBEFI_VER)
+
+deploy-ingress-controller:
+	helm install ingress-nginx stable/nginx-ingress \
+	--namespace default \
+	--set controller.replicaCount=1 \
+	--set controller.nodeSelector."beta\.kubernetes\.io/os"=linux \
+	--set defaultBackend.nodeSelector."beta\.kubernetes\.io/os"=linux

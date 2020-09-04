@@ -176,13 +176,13 @@ impl NiFiController {
             updated: nifi_cm_updated,
             logging_cm: d.clone().spec.logging_config_map,
         };
-        let sets_updated = self
-            .sets_controller
-            .handle_sets(&d, &name, &ns, cm_state)
-            .await?;
         let service_updated = self
             .svc_controller
             .handle_services(&name, &ns, &d.spec.ingress)
+            .await?;
+        let sets_updated = self
+            .sets_controller
+            .handle_sets(&d, &name, &ns, cm_state, service_updated)
             .await?;
         debug!(
             "Resource updates: configmap = {}, statefulsets = {}, services = {}",

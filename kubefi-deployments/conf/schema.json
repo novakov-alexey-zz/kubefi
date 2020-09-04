@@ -50,6 +50,21 @@
         "loggingConfigMap": {
           "type": "string"
         },
+        "ingress": {
+          "type": "object",
+          "required": [
+            "host",
+            "ingressClass"
+          ],
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "ingressClass": {
+              "type": "string"
+            }
+          }
+        },
         "nifiResources": {
           "type": "object",
           "properties": {

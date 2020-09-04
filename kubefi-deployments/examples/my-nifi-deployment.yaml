@@ -4,13 +4,16 @@ metadata:
   name: my-nifi
 spec:
   image: apache/nifi:1.11.4
-  nifiReplicas: 3
+  nifiReplicas: 2
   zk:
-    replicas: 3
+    replicas: 2
     image: zookeeper:3.5.5
   loggingConfigMap: custom-logback-config
+  ingress:
+    host: 51.116.130.46.xip.io
+    ingressClass: nginx
   nifiResources:
     jvmHeapSize: 2g
     requests:
-      cpu: 2000m
-      memory: 2048Mi
+      cpu: 200m
+      memory: 1024Mi

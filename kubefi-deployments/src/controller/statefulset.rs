@@ -29,6 +29,7 @@ struct SetParams {
     pub app_label: String,
     pub storage_class: Option<String>,
     pub cm_state: Option<ConfigMapState>,
+    pub svc_updated: bool,
 }
 
 const LOGGING_VOLUME: &str = "logback-xml";
@@ -155,6 +156,7 @@ impl StatefulSetController {
         name: &str,
         ns: &str,
         nifi_cm_state: ConfigMapState,
+        service_updated: bool,
     ) -> Result<bool> {
         let nifi = get_or_create::<StatefulSet, _>(&self.client, &name, &name, &ns, |name| {
             self.nifi_template(&name, &d)
@@ -174,6 +176,7 @@ impl StatefulSetController {
                     app_label: NIFI_APP_LABEL.to_string(),
                     storage_class: d.clone().spec.storage_class,
                     cm_state: Some(nifi_cm_state.clone()),
+                    svc_updated: service_updated,
                 };
                 self.update_existing_set(
                     &d,
@@ -199,6 +202,7 @@ impl StatefulSetController {
                     app_label: ZK_APP_LABEL.to_string(),
                     storage_class: d.clone().spec.storage_class,
                     cm_state: None,
+                    svc_updated: false,
                 };
                 self.update_existing_set(
                     &d,
