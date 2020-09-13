@@ -45,4 +45,15 @@ deploy-ingress-controller:
 	--namespace default \
 	--set controller.replicaCount=1 \
 	--set controller.nodeSelector."beta\.kubernetes\.io/os"=linux \
-	--set defaultBackend.nodeSelector."beta\.kubernetes\.io/os"=linux
+    --set defaultBackend.nodeSelector."beta\.kubernetes\.io/os"=linux \
+    --set-string controller.podAnnotations.enable-ssl-passthrough=true \
+    --set controller.extraArgs.enable-ssl-passthrough=""
+undeploy-ingress-controller:
+	helm delete ingress-nginx --namespace default
+
+create-tls-jks-secret:
+	kubectl delete secret nifi-tls-jks -n $(OPERATOR_NAMESPACE)
+	kubectl create secret generic nifi-tls-jks \
+    	--from-file=./conf/tls/keystore.jks \
+    	--from-file=./conf/tls/truststore.jks \
+    	-n $(OPERATOR_NAMESPACE)

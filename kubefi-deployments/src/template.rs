@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::crd::NiFiDeploymentSpec;
 use crate::crd::PodResources;
-use crate::crd::{AuthLdap, IngressCfg};
+use crate::crd::{IngressCfg, NiFiDeployment};
 use crate::handelbars_ext::get_files_helper;
 
 pub struct Template {
@@ -111,15 +111,19 @@ impl Template {
     pub fn ingress(&self, name: &str, cfg: &Option<IngressCfg>) -> Result<Option<String>> {
         let mut data = self.get_config(name);
         if let Some(ing) = cfg {
-            let ing_json = json!({ "ingress": {
-                "enabled": true,
-                "host": ing.host,
-                "ingressClass": ing.ingress_class
-            } });
-            merge_json(&mut data, ing_json);
+            let json = Template::add_ingress(ing);
+            merge_json(&mut data, json);
         }
         debug!("ingress template params\n:{}", &data);
         self.render(&data, INGRESS)
+    }
+
+    fn add_ingress(ing: &IngressCfg) -> Value {
+        json!({ "ingress": {
+                "enabled": true,
+                "host": ing.host,
+                "ingressClass": ing.ingress_class
+            } })
     }
 
     fn get_config(&self, name: &str) -> Value {
@@ -133,22 +137,17 @@ impl Template {
         &self,
         name: &str,
         ns: &str,
-        replicas: &u8,
-        ldap: &Option<AuthLdap>,
+        d: &NiFiDeployment,
     ) -> Result<Option<String>> {
         let mut data = self.get_config(name);
 
-        let replica_indices = if replicas > &0 {
-            (0..*replicas).collect::<Vec<_>>()
-        } else {
-            vec![]
-        };
+        let replica_indices = (0..d.spec.nifi_replicas).collect::<Vec<_>>();
         merge_json(
             &mut data,
             json!({ "ns": ns, "nifiReplicas": replica_indices}),
         );
 
-        let maybe_ldap = &ldap.as_ref().map(|al| {
+        let maybe_ldap = &d.spec.ldap.clone().map(|al| {
             json!(
             {
             "auth": {
@@ -161,6 +160,10 @@ impl Template {
         });
         if let Some(cfg) = maybe_ldap {
             merge_json(&mut data, cfg.clone());
+        }
+        if let Some(ing) = &d.spec.ingress {
+            let json = Template::add_ingress(ing);
+            merge_json(&mut data, json);
         }
 
         self.configmap(NIFI_CONFIGMAP, &data)

@@ -8,15 +8,23 @@ metadata:
   name: {{ name }}-headless
 spec:
   clusterIP: None
-  ports:
-    - name: http
-      port: 8080
+  ports:{{#if protocol.isSecure}}
+    - name: https
+      port: {{protocol.httpsPort}}
       protocol: TCP
-      targetPort: 8080
+      targetPort: {{protocol.httpsPort}}
     - name: cluster
-      port: 6007
+      port: {{protocol.secureClusterPort}}
       protocol: TCP
-      targetPort: 6007
+      targetPort: {{protocol.secureClusterPort}}{{else}}
+    - name: http
+      port: {{protocol.httpPort}}
+      protocol: TCP
+      targetPort: {{protocol.httpPort}}
+    - name: cluster
+      port: {{protocol.clusterPort}}
+      protocol: TCP
+      targetPort: {{protocol.clusterPort}}{{/if}}
   selector:
     app: nifi
     release: nifi

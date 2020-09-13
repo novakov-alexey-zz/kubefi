@@ -7,13 +7,17 @@ metadata:
     release: nifi
   name: {{ name }}
 spec:  
-  ports:
+  ports:{{#if protocol.isSecure}}
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: {{protocol.httpsPort}}{{else}}
   - name: http
     port: 80
     protocol: TCP
-    targetPort: 8080
+    targetPort: {{protocol.httpPort}}{{/if}}
   selector:
     app: nifi
     release: nifi
-  sessionAffinity: None
+  sessionAffinity: ClientIP
   type: ClusterIP

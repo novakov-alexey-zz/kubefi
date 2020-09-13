@@ -5,15 +5,17 @@ metadata:
 spec:
   image: apache/nifi:1.11.4
   nifiReplicas: 2
+  ldap:
+    host: ldap://ldap-service:389
   zk:
-    replicas: 2
+    replicas: 1
     image: zookeeper:3.5.5
   loggingConfigMap: custom-logback-config
   ingress:
-    host: 51.116.130.46.xip.io
+    host: 51.116.129.148.xip.io
     ingressClass: nginx
   nifiResources:
-    jvmHeapSize: 2g
+    jvmHeapSize: 1g
     requests:
       cpu: 200m
       memory: 1024Mi

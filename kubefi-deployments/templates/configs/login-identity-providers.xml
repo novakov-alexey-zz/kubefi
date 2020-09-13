@@ -66,9 +66,9 @@
     <provider>
         <identifier>ldap-provider</identifier>
         <class>org.apache.nifi.ldap.LdapProvider</class>
-        <property name="Authentication Strategy">START_TLS</property>
-        <property name="Manager DN"></property>
-        <property name="Manager Password"></property>
+        <property name="Authentication Strategy">SIMPLE</property>
+        <property name="Manager DN">{{ auth.ldap.managerDn }}</property>
+        <property name="Manager Password">{{ auth.ldap.managerPassword }}</property>
         <property name="TLS - Keystore"></property>
         <property name="TLS - Keystore Password"></property>
         <property name="TLS - Keystore Type"></property>

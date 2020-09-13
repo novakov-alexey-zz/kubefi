@@ -63,7 +63,7 @@ spec:
 
           prop_replace nifi.remote.input.host ${FQDN}
           prop_replace nifi.cluster.node.address ${FQDN}
-          prop_replace nifi.web.http.host ${FQDN}
+          {{#if protocol.httpsPort}}prop_replace nifi.web.https.host ${FQDN}{{else}}prop_replace nifi.web.http.host ${FQDN}{{/if}}
           prop_replace nifi.zookeeper.connect.string ${NIFI_ZOOKEEPER_CONNECT_STRING}
           prop_replace nifi.kerberos.krb5.file "/etc/krb5.conf" nifi.properties
 
@@ -87,16 +87,22 @@ spec:
           periodSeconds: 60
           successThreshold: 1
           tcpSocket:
-            port: 8080
+            port: {{#if protocol.isSecure}}{{protocol.httpsPort}}{{else}}{{protocol.httpPort}}{{/if}}
           timeoutSeconds: 1
         name: server
-        ports:
-        - containerPort: 8080
+        ports:{{#if protocol.isSecure}}
+        - containerPort: {{protocol.httpsPort}}
+          name: https
+          protocol: TCP
+        - containerPort: {{protocol.secureClusterPort}}
+          name: cluster
+          protocol: TCP{{else}}
+        - containerPort: {{protocol.httpPort}}
           name: http
           protocol: TCP
-        - containerPort: 6007
+        - containerPort: {{protocol.clusterPort}}
           name: cluster
-          protocol: TCP
+          protocol: TCP{{/if}}{{#if ne protocol.isSecure}}
         readinessProbe:
           exec:
             command:
@@ -104,7 +110,7 @@ spec:
             - -c
             - |
               curl -kv \
-                http://$(hostname -f):8080/nifi-api/controller/cluster > $NIFI_BASE_DIR/data/cluster.state
+                http://$(hostname -f):{{protocol.httpPort}}/nifi-api/controller/cluster > $NIFI_BASE_DIR/data/cluster.state
               STATUS=$(jq -r ".cluster.nodes[] | select((.address==\"$(hostname -f)\") or .address==\"localhost\") | .status" $NIFI_BASE_DIR/data/cluster.state)
 
               if [[ ! $STATUS = "CONNECTED" ]]; then
@@ -116,7 +122,7 @@ spec:
           initialDelaySeconds: 60
           periodSeconds: 20
           successThreshold: 1
-          timeoutSeconds: 1
+          timeoutSeconds: 1 {{/if}}
         resources: {{#if nifiResources.requests}} 
           requests: {{#if nifiResources.requests.cpu}}
             cpu: {{nifiResources.requests.cpu}}{{/if}}
@@ -164,6 +170,14 @@ spec:
         - mountPath: /opt/nifi/nifi-current/conf/zookeeper.properties
           name: zookeeper-properties
           subPath: zookeeper.properties
+        {{#if protocol.isSecure}}
+        - mountPath: /opt/nifi/nifi-current/conf/keystore.jks
+          name: nifi-tls-jks
+          subPath: keystore.jks
+        - mountPath: /opt/nifi/nifi-current/conf/truststore.jks
+          name: nifi-tls-jks
+          subPath: truststore.jks
+        {{/if}}
         {{# if kerberos.enabled }}
         - mountPath: /opt/nifi/secret/nifi.keytab
           name: nifi-service-keytab
@@ -323,6 +337,12 @@ spec:
             path: zookeeper.properties
           name: {{ name }}-config
         name: zookeeper-properties
+      {{#if protocol.isSecure}}
+      - name: nifi-tls-jks
+        secret:
+          defaultMode: 420
+          secretName: nifi-tls-jks
+      {{/if}}
       {{# if kerberos.enabled }}
       - name: nifi-service-keytab
         secret:

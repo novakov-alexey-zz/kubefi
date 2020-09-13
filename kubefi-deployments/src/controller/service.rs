@@ -120,7 +120,7 @@ fn ingress_updated(
             current_ingress.map(|r| match r {
                 Left(Some(ing)) => {
                     debug!("ing spec: {:?}", &ing.spec);
-                    let found = ing
+                    let host_found = ing
                         .spec
                         .and_then(|s| s.rules)
                         .unwrap_or_default()
@@ -131,7 +131,15 @@ fn ingress_updated(
                                 .map(|h| h == cfg.host.as_str())
                                 .unwrap_or(false)
                         });
-                    !found
+                    let class_found =
+                        ing.metadata
+                            .annotations
+                            .unwrap_or_default()
+                            .iter()
+                            .any(|(k, v)| {
+                                k == "kubernetes.io/ingress.class" && v == &cfg.ingress_class
+                            });
+                    !host_found || !class_found
                 }
                 _ => false,
             })
