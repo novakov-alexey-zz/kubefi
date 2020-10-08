@@ -75,3 +75,10 @@ deploy-example:
 	kubectl create -f examples/my-nifi-deployment.yaml -n $(OPERATOR_NAMESPACE)
 undeploy-example:
 	kubectl delete -f examples/my-nifi-deployment.yaml -n $(OPERATOR_NAMESPACE)
+
+deploy-ldap:
+	kubectl create -f ldap/ldap-deployment.yaml -n $(OPERATOR_NAMESPACE)
+	kubectl create -f ldap/ldap-service.yaml -n $(OPERATOR_NAMESPACE)
+undeploy-ldap:
+	kubectl delete -f ldap/ldap-deployment.yaml -n $(OPERATOR_NAMESPACE)
+	kubectl delete -f ldap/ldap-service.yaml -n $(OPERATOR_NAMESPACE)
