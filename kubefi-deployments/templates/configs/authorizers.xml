@@ -46,6 +46,7 @@
         <property name="Initial User Identity {{ i }}">{{ ../name }}-{{i}}.{{../name}}-headless.{{../ns}}.svc.cluster.local</property>
         {{/each~}}
         <property name="Initial User Identity admin">{{auth.ldap.managerUsername}}</property>
+        <property name="Initial User Identity Wildcard">*.{{../name}}-headless.{{../ns}}.svc.cluster.local</property>
     </userGroupProvider>
     <!--
         The LdapUserGroupProvider will retrieve users and groups from an LDAP server. The users and groups
@@ -217,6 +218,7 @@
         {{#each nifiReplicas as |i| ~}}
         <property name="Node Identity {{ i }}">{{ ../name }}-{{i}}.{{../name}}-headless.{{../ns}}.svc.cluster.local</property>
         {{/each~}}
+        <property name="Node Identity Wildcard">*.{{../name}}-headless.{{../ns}}.svc.cluster.local</property>
     </accessPolicyProvider>
         <!--
         The StandardManagedAuthorizer. This authorizer implementation must be configured with the

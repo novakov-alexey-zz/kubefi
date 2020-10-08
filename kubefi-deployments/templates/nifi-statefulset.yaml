@@ -66,7 +66,11 @@ spec:
           {{#if protocol.httpsPort}}prop_replace nifi.web.https.host ${FQDN}{{else}}prop_replace nifi.web.http.host ${FQDN}{{/if}}
           prop_replace nifi.zookeeper.connect.string ${NIFI_ZOOKEEPER_CONNECT_STRING}
           prop_replace nifi.kerberos.krb5.file "/etc/krb5.conf" nifi.properties
-
+          {{#if protocol.security.jksSecret}}
+          prop_replace nifi.security.keystorePasswd $(cat /opt/nifi/nifi-current/conf/keystorePasswd)
+          prop_replace nifi.security.keyPasswd $(cat /opt/nifi/nifi-current/conf/keyPasswd)
+          prop_replace nifi.security.truststorePasswd $(cat /opt/nifi/nifi-current/conf/truststorePasswd)
+          {{/if}}
           exec bin/nifi.sh run
         env:
         - name: NIFI_ZOOKEEPER_CONNECT_STRING
@@ -177,6 +181,15 @@ spec:
         - mountPath: /opt/nifi/nifi-current/conf/truststore.jks
           name: nifi-tls-jks
           subPath: truststore.jks
+        - mountPath: /opt/nifi/nifi-current/conf/keyPasswd
+          name: nifi-tls-pwd
+          subPath: keyPasswd
+        - mountPath: /opt/nifi/nifi-current/conf/keystorePasswd
+          name: nifi-tls-pwd
+          subPath: keystorePasswd
+        - mountPath: /opt/nifi/nifi-current/conf/truststorePasswd
+          name: nifi-tls-pwd
+          subPath: truststorePasswd
         {{/if}}
         {{# if kerberos.enabled }}
         - mountPath: /opt/nifi/secret/nifi.keytab
@@ -341,7 +354,11 @@ spec:
       - name: nifi-tls-jks
         secret:
           defaultMode: 420
-          secretName: nifi-tls-jks
+          secretName: {{ protocol.security.jksSecret }}
+      - name: nifi-tls-pwd
+        secret:
+          defaultMode: 420
+          secretName: {{ protocol.security.pwdSecret }}
       {{/if}}
       {{# if kerberos.enabled }}
       - name: nifi-service-keytab
@@ -365,7 +382,7 @@ spec:
       - ReadWriteOnce      
       resources:
         requests:
-          storage: 1Gi
+          storage: 512Mi
       storageClassName: {{ storageClass }}
       volumeMode: Filesystem    
   - metadata:
@@ -375,7 +392,7 @@ spec:
       - ReadWriteOnce      
       resources:
         requests:
-          storage: 10Gi
+          storage: 5Gi
       storageClassName: {{ storageClass }}
       volumeMode: Filesystem    
   - metadata:      
@@ -385,7 +402,7 @@ spec:
       - ReadWriteOnce      
       resources:
         requests:
-          storage: 10Gi
+          storage: 5Gi
       storageClassName: {{ storageClass }}
       volumeMode: Filesystem    
   - metadata:      
@@ -395,7 +412,7 @@ spec:
       - ReadWriteOnce      
       resources:
         requests:
-          storage: 10Gi
+          storage: 5Gi
       storageClassName: {{ storageClass }}
       volumeMode: Filesystem    
   - metadata:      
@@ -405,6 +422,6 @@ spec:
       - ReadWriteOnce      
       resources:
         requests:
-          storage: 5Gi
+          storage: 2500Mi
       storageClassName: {{ storageClass }}
       volumeMode: Filesystem 

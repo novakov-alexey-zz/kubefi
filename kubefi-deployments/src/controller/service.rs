@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use anyhow::Result;
 use k8s_openapi::api::core::v1::Service;
-use k8s_openapi::api::extensions::v1beta1::Ingress;
 use kube::api::DeleteParams;
 use kube::Client;
 
@@ -12,6 +11,7 @@ use crate::template::Template;
 
 use super::either::Either;
 use super::either::Either::{Left, Right};
+use k8s_openapi::api::networking::v1beta1::Ingress;
 
 pub struct ServiceController {
     pub client: Rc<Client>,
