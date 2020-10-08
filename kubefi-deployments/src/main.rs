@@ -79,9 +79,10 @@ async fn main() -> Result<()> {
         }
     }
 
-    Err(Error::msg(
-        "Event stream for NiFiDeployment was closed, exiting...".to_string(),
-    ))
+    Err(Error::msg(format!(
+        "Event stream for {:?} was closed, exiting...",
+        read_type::<NiFiDeployment>("NiFi")
+    )))
 }
 
 async fn replace_crd(crds: Api<CustomResourceDefinition>, schema: PathBuf) -> Result<()> {

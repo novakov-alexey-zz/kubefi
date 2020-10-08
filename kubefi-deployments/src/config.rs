@@ -13,6 +13,7 @@ pub struct KubefiConfig {
 }
 
 pub fn read_kubefi_config() -> Result<KubefiConfig, Error> {
+    debug!("Loading kubefi config...");
     let cfg: KubefiConfig = HoconLoader::new()
         .load_file("./conf/kubefi.conf")?
         .resolve()?;
