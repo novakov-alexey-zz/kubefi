@@ -4,9 +4,9 @@ use anyhow::{Error, Result};
 use handlebars::Handlebars;
 use serde_json::Value;
 
+use crate::crd::IngressCfg;
 use crate::crd::NiFiDeploymentSpec;
 use crate::crd::PodResources;
-use crate::crd::{IngressCfg, NiFiDeployment};
 use crate::handelbars_ext::get_files_helper;
 
 pub struct Template {
@@ -137,17 +137,17 @@ impl Template {
         &self,
         name: &str,
         ns: &str,
-        d: &NiFiDeployment,
+        spec: &NiFiDeploymentSpec,
     ) -> Result<Option<String>> {
         let mut data = self.get_config(name);
 
-        let replica_indices = (0..d.spec.nifi_replicas).collect::<Vec<_>>();
+        let replica_indices = (0..spec.nifi_replicas).collect::<Vec<_>>();
         merge_json(
             &mut data,
             json!({ "ns": ns, "nifiReplicas": replica_indices}),
         );
 
-        let maybe_ldap = &d.spec.ldap.clone().map(|al| {
+        let maybe_ldap = &spec.ldap.clone().map(|al| {
             json!(
             {
             "auth": {
@@ -161,7 +161,7 @@ impl Template {
         if let Some(cfg) = maybe_ldap {
             merge_json(&mut data, cfg.clone());
         }
-        if let Some(ing) = &d.spec.ingress {
+        if let Some(ing) = &spec.ingress {
             let json = Template::add_ingress(ing);
             merge_json(&mut data, json);
         }

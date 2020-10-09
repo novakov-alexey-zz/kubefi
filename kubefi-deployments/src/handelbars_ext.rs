@@ -119,7 +119,7 @@ mod tests {
             .expect("Failed to create template engine");
         let name = "test".to_string();
         let content = template
-            .nifi_configmap(&name, "test", &(3 as u8), &None)
+            .nifi_configmap(&name, "test", &test_spec(None))
             .expect("Failed to render configmap template");
         println!("content:\n{}", content.unwrap())
     }
@@ -141,7 +141,15 @@ mod tests {
                 memory: Some("llll_mmm".to_string()),
             }),
         });
-        let spec = NiFiDeploymentSpec {
+        let spec = test_spec(res);
+        let content = template
+            .nifi_statefulset(&name, &spec)
+            .expect("Failed to render configmap template");
+        println!("content:\n{}", content.unwrap())
+    }
+
+    fn test_spec(res: Option<Resources>) -> NiFiDeploymentSpec {
+        NiFiDeploymentSpec {
             nifi_replicas: 2,
             zk: ZooKeeper {
                 replicas: 2,
@@ -153,10 +161,6 @@ mod tests {
             logging_config_map: None,
             nifi_resources: res,
             ingress: None,
-        };
-        let content = template
-            .nifi_statefulset(&name, &spec)
-            .expect("Failed to render configmap template");
-        println!("content:\n{}", content.unwrap())
+        }
     }
 }
