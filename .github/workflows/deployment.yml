@@ -17,13 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Install minimal stable with clippy and rustfmt
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        components: rustfmt, clippy
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
+      - uses: actions/checkout@v1
+      - uses: icepuma/rust-action@master
+        with:
+          args: cd kubefi-deployments && cargo fmt -- --check && cargo clippy -- -Dwarnings && cargo test
