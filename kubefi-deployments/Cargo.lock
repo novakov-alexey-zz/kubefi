@@ -962,6 +962,7 @@ dependencies = [
  "either",
  "env_logger",
  "futures",
+ "futures-core",
  "futures-util",
  "handlebars",
  "hocon",

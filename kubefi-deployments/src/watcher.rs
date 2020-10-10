@@ -1,12 +1,37 @@
-use anyhow::Result;
+use anyhow::{Error, Result};
+use futures::TryStreamExt;
+use futures_core::stream::BoxStream;
 use kube::api::{Meta, PostParams};
-use kube::Api;
+use kube::{Api, Client};
 use kube_runtime::watcher::Event;
 
 use crate::controller::{NiFiController, ReplaceStatus};
 use crate::crd::NiFiDeployment;
+use crate::{get_api, read_type, Namespace};
 
-pub async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<()> {
+pub async fn watch<'a>(
+    client: Client,
+    watcher: &mut BoxStream<'a, Result<Event<NiFiDeployment>, kube_runtime::watcher::Error>>,
+    controller: &NiFiController,
+) -> Result<()> {
+    while let Some(event) = watcher.try_next().await? {
+        let status = handle_event(&controller, event.clone()).await?;
+        for s in status {
+            let api = get_api::<NiFiDeployment>(
+                &Namespace::SingleNamespace(s.ns.as_str().to_string()),
+                client.clone(),
+            );
+            replace_status(&api, s).await?
+        }
+    }
+
+    Err(Error::msg(format!(
+        "Event stream for {:?} was closed, exiting...",
+        read_type::<NiFiDeployment>("NiFi")
+    )))
+}
+
+async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Result<()> {
     debug!("replacing status: {:?}", &s);
     let mut resource = api.get_status(&s.name).await?;
     resource.status = Some(s.clone().status);
@@ -24,7 +49,7 @@ pub async fn replace_status(api: &Api<NiFiDeployment>, s: ReplaceStatus) -> Resu
         })
 }
 
-pub async fn handle_event(
+async fn handle_event(
     controller: &NiFiController,
     event: Event<NiFiDeployment>,
 ) -> Result<Vec<ReplaceStatus>> {

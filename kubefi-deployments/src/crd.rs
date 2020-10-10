@@ -93,7 +93,7 @@ pub async fn replace_crd(crds: Api<CustomResourceDefinition>, schema: PathBuf) -
     Ok(())
 }
 
-pub async fn delete_old_version(crds: Api<CustomResourceDefinition>) -> Result<()> {
+async fn delete_old_version(crds: Api<CustomResourceDefinition>) -> Result<()> {
     let dp = DeleteParams::default();
     // but ignore delete err if not exists
     let deleted = crds.delete(CRD_NAME, &dp).await;
@@ -114,7 +114,7 @@ pub async fn delete_old_version(crds: Api<CustomResourceDefinition>) -> Result<(
         .or(Ok(()))
 }
 
-pub async fn create_new_version(
+async fn create_new_version(
     crds: Api<CustomResourceDefinition>,
     json_schema: String,
 ) -> Result<()> {

@@ -17,9 +17,9 @@ use crate::Namespace::*;
 pub mod config;
 pub mod controller;
 pub mod crd;
-pub mod event_handler;
 mod handelbars_ext;
 pub mod template;
+pub mod watcher;
 
 pub enum Namespace {
     All,

@@ -1,5 +1,6 @@
 extern crate dotenv;
 extern crate env_logger;
+extern crate futures_core;
 extern crate kube_derive;
 extern crate kube_runtime;
 extern crate kubefi_deployments;
@@ -9,9 +10,9 @@ extern crate log;
 use std::path::Path;
 use std::rc::Rc;
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use dotenv::dotenv;
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1beta1::CustomResourceDefinition;
 use kube::api::{Api, ListParams};
 use kube::Client;
@@ -19,9 +20,9 @@ use kube::Client;
 use kubefi_deployments::config::{read_kubefi_config, read_nifi_config};
 use kubefi_deployments::controller::NiFiController;
 use kubefi_deployments::crd::{replace_crd, NiFiDeployment};
-use kubefi_deployments::event_handler::{handle_event, replace_status};
 use kubefi_deployments::template::Template;
-use kubefi_deployments::{get_api, read_namespace, read_type, Namespace};
+use kubefi_deployments::watcher::watch;
+use kubefi_deployments::{get_api, read_namespace, read_type};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -65,19 +66,5 @@ async fn main() -> Result<()> {
         read_type::<NiFiDeployment>("NiFi")
     );
 
-    while let Some(event) = watcher.try_next().await? {
-        let status = handle_event(&controller, event.clone()).await?;
-        for s in status {
-            let api = get_api::<NiFiDeployment>(
-                &Namespace::SingleNamespace(s.ns.as_str().to_string()),
-                client.clone(),
-            );
-            replace_status(&api, s).await?
-        }
-    }
-
-    Err(Error::msg(format!(
-        "Event stream for {:?} was closed, exiting...",
-        read_type::<NiFiDeployment>("NiFi")
-    )))
+    watch(client, &mut watcher, &controller).await
 }
