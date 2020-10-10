@@ -2,6 +2,8 @@ extern crate schemars;
 extern crate serde_json;
 
 use std::fmt::Debug;
+use std::fs;
+use std::path::PathBuf;
 
 use anyhow::Result;
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1beta1::{
@@ -13,6 +15,7 @@ use kube::Api;
 use kube_derive::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use tokio::time::{delay_for, Duration};
 
 pub const CRD_NAME: &str = "nifideployments.io.github.novakov-alexey";
 
@@ -78,6 +81,16 @@ pub struct PodResources {
 pub struct NiFiDeploymentStatus {
     pub nifi_replicas: u8,
     pub error_msg: String,
+}
+
+pub async fn replace_crd(crds: Api<CustomResourceDefinition>, schema: PathBuf) -> Result<()> {
+    delete_old_version(crds.clone()).await?;
+    delay_for(Duration::from_secs(2)).await;
+
+    let schema = fs::read_to_string(schema)?;
+    create_new_version(crds, schema).await?;
+    delay_for(Duration::from_secs(1)).await;
+    Ok(())
 }
 
 pub async fn delete_old_version(crds: Api<CustomResourceDefinition>) -> Result<()> {

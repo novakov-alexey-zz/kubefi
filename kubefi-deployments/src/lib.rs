@@ -17,6 +17,7 @@ use crate::Namespace::*;
 pub mod config;
 pub mod controller;
 pub mod crd;
+pub mod event_handler;
 mod handelbars_ext;
 pub mod template;
 
@@ -44,5 +45,5 @@ pub fn read_type<T>(default: &'static str) -> &'static str {
     std::any::type_name::<T>()
         .split("::")
         .last()
-        .unwrap_or_else(|| default)
+        .unwrap_or(default)
 }

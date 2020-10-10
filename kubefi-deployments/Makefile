@@ -32,9 +32,23 @@ undeploy-kubefi:
 		manifests/kubefi-deployments-operator.yaml | kubectl delete -n $(OPERATOR_NAMESPACE) -f -
 run:
 	REPLACE_EXISTING_CRD=true cargo run
-
 build-image:
-	sh build-image.sh $(KUBEFI_VER)
+	# build musl binary via docker
+	rm -r target
+	alias rust-musl-builder='docker run --rm -it  -v "$(pwd)":/home/rust/src ekidd/rust-musl-builder:stable'
+	rust-musl-builder cargo build --release
+
+	# prepare content for the app image
+	mkdir target/docker
+	cp -r templates/ target/docker/templates
+	cp docker/Dockerfile target/docker
+	cp target/x86_64-unknown-linux-musl/release/kubefi-deployments target/docker/
+	mkdir -p target/docker/conf/
+	cp -r conf/ target/docker/conf
+
+	# build the app image
+	docker build -t kubefi-deployments-operator:$(KUBEFI_VER) -f target/docker/Dockerfile target/docker/
+
 push-image:
 	docker tag kubefi-deployments-operator:$(KUBEFI_VER) $(IMAGE_REGISTRY)/kubefi-deployments-operator:$(KUBEFI_VER)
 	docker push $(IMAGE_REGISTRY)/kubefi-deployments-operator:$(KUBEFI_VER)

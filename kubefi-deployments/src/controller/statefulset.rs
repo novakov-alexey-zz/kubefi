@@ -245,10 +245,7 @@ fn image_changed(set: &StatefulSet, image: &Option<String>, container: &str) -> 
 
 fn scale_set(set: &StatefulSet, expected_replicas: i32) -> bool {
     let replicas = set.clone().spec.as_ref().and_then(|s| s.replicas);
-    match replicas {
-        Some(current_replicas) if current_replicas != expected_replicas => true,
-        _ => false,
-    }
+    matches!(replicas, Some(current_replicas) if current_replicas != expected_replicas)
 }
 
 fn storage_class(set: &StatefulSet, storage_class: &Option<String>) -> bool {
