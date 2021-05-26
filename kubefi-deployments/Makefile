@@ -54,8 +54,7 @@ push-image:
 	docker push $(IMAGE_REGISTRY)/kubefi-deployments-operator:$(KUBEFI_VER)
 
 add-ingress-repo:
-	helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-	helm repo add stable https://kubernetes-charts.storage.googleapis.com/
+	helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx	
 	helm repo update
 deploy-ingress-controller:
 	helm install ingress-nginx ingress-nginx/ingress-nginx \
@@ -69,7 +68,7 @@ undeploy-ingress-controller:
 	helm delete ingress-nginx --namespace default
 
 create-tls-jks-secret:
-	kubectl delete secret nifi-tls-jks -n $(EXAMPLE_NAMESPACE)
+	kubectl delete secret nifi-tls-jks -n $(EXAMPLE_NAMESPACE) || exit 0
 	kubectl create secret generic nifi-tls-jks \
     	--from-file=./examples/tls/keystore.jks \
     	--from-file=./examples/tls/truststore.jks \
