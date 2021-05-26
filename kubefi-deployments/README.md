@@ -33,11 +33,11 @@ metadata:
   name: my-nifi
 spec:
   image: apache/nifi:1.11.4
-  storage_class: default
+  storageClass: default
   nifiReplicas: 1
   ingress: 
     host: minikube  # set the host to your DNS name 
-    ingress_class: nginx 
+    ingressClass: nginx 
   ldap:
     host: ldap://ldap-service:389
   zk:
